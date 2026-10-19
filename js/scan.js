@@ -6,6 +6,24 @@ const KEY = 'capital_gemini_key';
 // از طریق آن بدون فیلترشکن هم می‌توان به گوگل وصل شد؛ آن‌وقت پیام الکی «فیلترشکن روشن کن» نمی‌آید.
 const GEMINI_PROXY = 'https://taraz-api.vercel.app/api/gemini';
 
+// کشِ لیست مدل و مدلِ موفق — تا درخواست‌های سروری حداقل بماند (سهم ورسِل خفن)
+const MODELS_CACHE_KEY = 'capital_gemini_models_v1';
+const GOOD_MODEL_KEY = 'capital_gemini_model_ok';
+const MODELS_CACHE_TTL = 7 * 24 * 3600 * 1000; // یک هفته
+
+function readModelsCache() {
+  try {
+    const raw = store.get(MODELS_CACHE_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || !Array.isArray(o.list) || !o.list.length) return null;
+    if (Date.now() - (o.at || 0) > MODELS_CACHE_TTL) return null;
+    return o.list;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function geminiProxy(payload) {
   const resp = await fetch(GEMINI_PROXY, {
     method: 'POST',
@@ -266,24 +284,40 @@ async function readWithGemini(file, prompt, opts) {
   const b64 = await fileToJpeg(file, opts && opts.max, opts && opts.quality);
   lastB64 = b64;
   let models = MODELS.slice();
-  try {
-    const listed = await listModels(key);
-    if (listed.length) models = listed;
-  } catch (e) {}
+  const cachedList = readModelsCache();
+  if (cachedList && cachedList.length) {
+    models = cachedList; // لیستِ کش‌شده: یک فراخوانی کمتر در هر اسکن
+  } else {
+    try {
+      const listed = await listModels(key);
+      if (listed.length) {
+        models = listed;
+        store.set(MODELS_CACHE_KEY, JSON.stringify({ at: Date.now(), list: listed }));
+      }
+    } catch (e) {}
+  }
+  const good = String(store.get(GOOD_MODEL_KEY) || '');
+  if (good && models.indexOf(good) >= 0) models = [good].concat(models.filter((m) => m !== good));
   let lastErr = null;
   const jsonMode = !!(opts && opts.jsonMode);
   for (const model of models.slice(0, 6)) {
     try {
       let raw = await callGemini(model, key, b64, prompt, jsonMode);
       if (!raw && jsonMode) raw = await callGemini(model, key, b64, prompt, false);
-      if (raw) return raw;
+      if (raw) {
+        store.set(GOOD_MODEL_KEY, model); // دفعهٔ بعد همان اول امتحان می‌شود
+        return raw;
+      }
       lastErr = new Error('جواب قابل فهم نبود');
     } catch (e) {
       lastErr = e;
       if (jsonMode) {
         try {
           const raw = await callGemini(model, key, b64, prompt, false);
-          if (raw) return raw;
+          if (raw) {
+            store.set(GOOD_MODEL_KEY, model);
+            return raw;
+          }
         } catch (e2) {
           lastErr = e2;
         }
@@ -291,6 +325,11 @@ async function readWithGemini(file, prompt, opts) {
       const msg = ((lastErr && lastErr.message) || '').toLowerCase();
       const skip =
         lastErr.status === 404 || msg.includes('not found') || msg.includes('supported methods');
+      if (skip) {
+        // مدل مرده ذهن‌خوان: لیستِ کش را باطل کن تا اسکن بعدی تازه شود
+        if (good === model) store.set(GOOD_MODEL_KEY, '');
+        store.set(MODELS_CACHE_KEY, '');
+      }
       if (!skip && lastErr.status && lastErr.status !== 429) break;
     }
   }
