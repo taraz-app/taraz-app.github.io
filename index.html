@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=5">
 <link rel="icon" type="image/png" href="icons/icon-192.png?v=5">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=vazirmatn:400,600,700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=2.38.17">
+<link rel="stylesheet" href="css/app.css?v=2.38.18">
 <script>
 window.__capErrors = [];
 window.__capLog = function (where, err) {
@@ -104,7 +104,14 @@ try {
     <button type="button" class="bn" data-tab="assets" data-ic="wallet"><span class="bnl">ثروت</span></button>
   </div>
 </nav>
-<button id="fab" title="تراکنش جدید" aria-label="افزودن"></button>
+<button id="fab" title="ثبت سریع" aria-label="افزودن"></button>
+<div id="fabScrim" class="fab-scrim" hidden></div>
+<div id="fabMenu" class="fab-menu" hidden>
+  <button type="button" class="fm-it" id="fmInst"><span class="fm-ic fm-ic-orange"></span><span class="fm-lb">اقساط و وام</span></button>
+  <button type="button" class="fm-it" id="fmInv"><span class="fm-ic fm-ic-green"></span><span class="fm-lb">سرمایه‌گذاری</span></button>
+  <button type="button" class="fm-it" id="fmDebt"><span class="fm-ic fm-ic-purple"></span><span class="fm-lb">طلب و بدهی</span></button>
+  <button type="button" class="fm-it" id="fmTx"><span class="fm-ic fm-ic-blue"></span><span class="fm-lb">تراکنش</span></button>
+</div>
 
 
 <div class="overlay" id="overlay">
@@ -129,6 +136,6 @@ try {
   </div>
 </div>
 
-<script type="module" src="js/boot.js?v=2.38.17"></script>
+<script type="module" src="js/boot.js?v=2.38.18"></script>
 </body>
 </html>

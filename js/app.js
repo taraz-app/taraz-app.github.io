@@ -1,4 +1,4 @@
-import { store, toast, showTip, hideTip, APP_VERSION } from './utils.js';
+import { store, toast, showTip, hideTip, APP_VERSION, haptic } from './utils.js';
 import { t, t as tr, setLang, langPref, LANGS, calPref, setCalendar } from './i18n.js';
 import { icon } from './icons.js';
 import * as inst from './installments.js';
@@ -609,11 +609,34 @@ window.onBookChanged = () => {
   switchTab('home');
 };
 paintShellIcons();
-document.getElementById('fab').onclick = () => {
-  if (curTab === 'assets' && curAsset === 'debts') openDebtForm();
-  else if (curTab === 'assets' && curAsset === 'installments') inst.openPlanForm();
-  else openTxForm();
-};
+// منوی سریعِ FAB: تراکنش / طلب و بدهی / سرمایه / اقساط (به سبک مدادِ تلگرام)
+(function setupFabMenu() {
+  const fab = document.getElementById('fab');
+  const menu = document.getElementById('fabMenu');
+  const scrim = document.getElementById('fabScrim');
+  if (!fab || !menu || !scrim) return;
+  const items = {
+    fmTx: { ic: 'list', fn: () => openTxForm() },
+    fmDebt: { ic: 'handshake', fn: () => openDebtForm() },
+    fmInv: { ic: 'trend', fn: () => openInvestForm() },
+    fmInst: { ic: 'calendar', fn: () => inst.openPlanForm() },
+  };
+  Object.keys(items).forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const ic = el.querySelector('.fm-ic');
+    if (ic) ic.innerHTML = icon(items[id].ic);
+    el.onclick = () => { setFabMenu(false); items[id].fn(); };
+  });
+  window.setFabMenu = function (open) {
+    menu.hidden = !open;
+    scrim.hidden = !open;
+    fab.classList.toggle('open', open);
+    if (open) haptic(8);
+  };
+  fab.onclick = () => window.setFabMenu(menu.hidden);
+  scrim.onclick = () => window.setFabMenu(false);
+})();
 document.querySelectorAll('#bottomNav .bn').forEach((b) => {
   b.onclick = () => switchTab(b.dataset.tab);
   b.classList.toggle('on', b.dataset.tab === curTab);
