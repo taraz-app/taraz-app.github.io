@@ -130,12 +130,10 @@ export function apply(txs, pageMonth) {
   return txs.filter((t) => matches(t, pageMonth));
 }
 
-// ── نوار بالای لیست: جست‌وجو + دکمهٔ فیلتر + چیپ‌های سریع + چیپ‌های فعال ──
+// ── نوار بالای لیست: جست‌وجو + دکمهٔ فیلتر + چیپ‌های فعال ──
+// چیپ‌های «نوع» (خرج/درآمد/انتقال/اقساط/قرض) عمداً این‌جا نیستند: فقط داخل شیتِ فیلتر.
 export function barHtml() {
   const n = activeCount();
-  const quick = KINDS.map(
-    (k) => `<button type="button" class="chip ${F.kinds.includes(k.id) ? 'on' : ''}" style="${F.kinds.includes(k.id) ? 'background:' + k.color : ''}" onclick="txfKind('${k.id}')">${tr(k.label)}</button>`
-  ).join('');
   const chips = [];
   if (F.range !== 'month') chips.push(chip(tr((RANGES.find((r) => r.id === F.range) || {}).label || ''), "txfSet('range','month')"));
   for (const c of F.cats) { const cat = CATS.find((x) => x.id === c); if (cat) chips.push(chip(cat.label, `txfToggle('cats','${c}')`, cat.color)); }
@@ -150,7 +148,6 @@ export function barHtml() {
       <div class="txf-search">${icon('search')}<input id="txfQ" type="search" placeholder="${tr('جست‌وجو در عنوان، یادداشت، ردیف‌ها…')}" value="${esc(F.q)}" oninput="txfQuery(this.value)" autocomplete="off"></div>
       <button type="button" class="btn sm ${n ? 'primary' : ''}" onclick="txfOpen()">${icon('filter')} ${tr('فیلتر')}${n ? ' <b>' + toFa(n) + '</b>' : ''}</button>
     </div>
-    <div class="chips txf-quick">${quick}</div>
     ${chips.length ? `<div class="chips txf-active">${chips.join('')}<button type="button" class="chip clear" onclick="txfClear()">${tr('پاک کردن همه')}</button></div>` : ''}
   </div>`;
 }
@@ -220,6 +217,8 @@ export function txfQuery(v) {
   F.q = v || '';
   rerender({ keepFocus: true });
 }
+// چیپ‌های «نوع» دیگر در نوارِ بالای لیست رندر نمی‌شوند (فقط داخل شیتِ فیلتر)؛
+// این هندلر برای صدا زدنِ برنامه‌ای/دیباگ نگه داشته شده است.
 export function txfKind(id) {
   const i = F.kinds.indexOf(id);
   if (i >= 0) F.kinds.splice(i, 1); else F.kinds.push(id);

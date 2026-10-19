@@ -957,9 +957,6 @@ a.btn.block{display:flex}
 .txf-search svg{width:18px;height:18px;flex:none}
 .txf-search input{flex:1;background:transparent;border:0;outline:0;color:var(--text);font:inherit;font-size:var(--fs-sm);min-width:0;padding:8px 0}
 .txf-search input::-webkit-search-cancel-button{-webkit-appearance:none}
-.txf-quick{margin-top:var(--sp-2);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
-.txf-quick::-webkit-scrollbar{display:none}
-.txf-quick .chip{flex:none;min-height:32px}
 .txf-active{margin-top:var(--sp-2)}
 .txf-active .chip{min-height:30px;padding-inline-end:6px}
 .txf-active .chip .x{background:rgba(255,255,255,.25);color:#fff;border:0;border-radius:50%;width:20px;height:20px;line-height:20px;font-size:14px;padding:0;margin-inline-start:2px}
