@@ -2,6 +2,19 @@ import { store, toast, uid } from './utils.js';
 import { parseAppDate } from './jalali.js';
 
 const KEY = 'capital_gemini_key';
+// عبوردهندهٔ ورسل: کلیدِ خودِ کاربر فوروارد می‌شود، چیزی ذخیره نمی‌شود.
+// از طریق آن بدون فیلترشکن هم می‌توان به گوگل وصل شد؛ آن‌وقت پیام الکی «فیلترشکن روشن کن» نمی‌آید.
+const GEMINI_PROXY = 'https://taraz-api.vercel.app/api/gemini';
+
+async function geminiProxy(payload) {
+  const resp = await fetch(GEMINI_PROXY, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (resp.status === 404 || resp.status >= 500) throw Object.assign(new Error('proxy-down'), { proxyDown: true, status: resp.status });
+  return resp;
+}
 const MODELS = [
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -143,28 +156,36 @@ function parseModelJson(text) {
 }
 
 async function callGemini(model, key, b64, prompt, jsonMode) {
-  const url =
-    'https://generativelanguage.googleapis.com/v1beta/models/' +
-    encodeURIComponent(model) +
-    ':generateContent?key=' +
-    encodeURIComponent(key);
-  const gen = { temperature: 0.1 };
-  if (jsonMode) gen.responseMimeType = 'application/json';
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            { inlineData: { mimeType: 'image/jpeg', data: b64 } },
-          ],
-        },
-      ],
-      generationConfig: gen,
-    }),
-  });
+  let resp = null;
+  try {
+    resp = await geminiProxy({ key, model, prompt, imageB64: b64, jsonMode: !!jsonMode });
+  } catch (e) {
+    /* پراکسی در دسترس نیست یا هنوز نصب نشده → مسیر مستقیم گوگل */
+  }
+  if (!resp) {
+    const url =
+      'https://generativelanguage.googleapis.com/v1beta/models/' +
+      encodeURIComponent(model) +
+      ':generateContent?key=' +
+      encodeURIComponent(key);
+    const gen = { temperature: 0.1 };
+    if (jsonMode) gen.responseMimeType = 'application/json';
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              { inlineData: { mimeType: 'image/jpeg', data: b64 } },
+            ],
+          },
+        ],
+        generationConfig: gen,
+      }),
+    });
+  }
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const msg = (data.error && data.error.message) || 'خطای ' + resp.status;
@@ -196,8 +217,16 @@ function shortErr(e) {
 }
 
 async function listModels(key) {
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key);
-  const resp = await fetch(url);
+  let resp = null;
+  try {
+    resp = await geminiProxy({ action: 'list', key });
+  } catch (e) {
+    /* پراکسی نیست → مستقیم */
+  }
+  if (!resp) {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key);
+    resp = await fetch(url);
+  }
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const err = new Error((data.error && data.error.message) || 'لیست مدل نیامد');
