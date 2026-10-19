@@ -1,5 +1,5 @@
 export const FA = '۰۱۲۳۴۵۶۷۸۹';
-export const APP_VERSION = '2.38.23';
+export const APP_VERSION = '2.38.24';
 
 let faDigits = true;
 export function setFaDigits(on) {
@@ -577,7 +577,7 @@ if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') 
   }).observe(document.documentElement, { childList: true, subtree: true });
 }
 
-/* ═══ لذت‌های بصری v2.38.23 ═══ */
+/* ═══ لذت‌های بصری v2.38.24 ═══ */
 
 // شمارشِ نرمِ اعداد: از مقدار قبلی به مقدار جدید (المنت‌هایی با data-count)
 // حافظهٔ آخرینِ مقدارِ نمایش‌یافتهٔ هر عدد — برای این‌که در رندرهای پشت‌سرهم،

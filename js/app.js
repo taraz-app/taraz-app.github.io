@@ -666,8 +666,8 @@ paintShellIcons();
       lastY = y;
       return;
     }
-    if (y > lastY + 10 && y > 90) document.body.classList.add('fabsHidden');
-    else if (y < lastY - 10 || y < 70) document.body.classList.remove('fabsHidden');
+    if (y > lastY + 4 && y > 40) document.body.classList.add('fabsHidden');
+    else if (y < lastY - 4 || y < 24) document.body.classList.remove('fabsHidden');
     lastY = y;
   }, { passive: true });
 })();

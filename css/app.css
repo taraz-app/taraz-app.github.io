@@ -532,17 +532,17 @@ body.locked{overflow:hidden}
 #bottomNav{
   position:fixed;left:50%;transform:translateX(-50%);
   bottom:calc(12px + env(safe-area-inset-bottom));
-  width:calc(100% - 20px);max-width:460px;z-index:29;
+  width:calc(100% - 24px);max-width:430px;z-index:29;
   display:flex;justify-content:center;
   background:var(--nav);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
   border:1px solid var(--border-soft);border-radius:999px;
   box-shadow:var(--shadow-2);
-  padding:5px;
+  padding:4px;
 }
 .bn-row{position:relative;width:100%;display:grid;grid-template-columns:repeat(4,1fr)}
-#bottomNav .bn{display:flex;flex-direction:column;align-items:center;gap:3px;background:transparent;border:0;color:var(--muted);font:inherit;min-height:58px;padding:8px 6px 2px;border-radius:22px;cursor:pointer;position:relative;z-index:1;transition:color .2s}
-#bottomNav .bn .i{width:24px;height:24px;transition:transform .2s}
-#bottomNav .bn .bnl{font-size:12.5px;font-weight:600}
+#bottomNav .bn{display:flex;flex-direction:column;align-items:center;gap:2px;background:transparent;border:0;color:var(--muted);font:inherit;min-height:48px;padding:6px 4px 2px;border-radius:20px;cursor:pointer;position:relative;z-index:1;transition:color .2s}
+#bottomNav .bn .i{width:21px;height:21px;transition:transform .2s}
+#bottomNav .bn .bnl{font-size:11px;font-weight:600}
 #bottomNav .bn.on{color:var(--accent)}
 #bottomNav .bn.on .bnl{font-weight:800}
 #bottomNav .bn:active .i{transform:scale(.9)}
@@ -567,9 +567,8 @@ body.locked{overflow:hidden}
 }
 #scanFab .i{width:22px;height:22px}
 #scanFab:active{transform:scale(.9)}
-/* مخفی/ظاهرشدن نرم هر دو دکمهٔ شناور با جهت اسکرول */
-#fab{transition:transform .26s var(--ease), bottom .28s var(--ease), box-shadow .2s}
-body.fabsHidden #fab, body.fabsHidden #scanFab{transform:translateY(calc(120px + 100%));opacity:0;pointer-events:none}
+/* مخفی/ظاهرشدن نرم سرانجام از کنارِ منوی بیضی (نه از پایین صفحه) */
+body.fabsHidden #fab, body.fabsHidden #scanFab{transform:translateX(calc(120% + 24px));opacity:0;pointer-events:none}
 body.locked #bottomNav,body.locked #fab,body.locked #scanFab{display:none}
 
 /* ═══ ثبت سریع ═══ */
@@ -1063,8 +1062,8 @@ html.theme-fade, html.theme-fade *{
 
 /* حبابِ کشوییِ سبک تلگرام (نشانگر تبِ فعال) */
 .bn-pill{
-  position:absolute;top:5px;bottom:5px;left:0;width:0;z-index:0;opacity:0;
-  background:var(--accent-soft);border-radius:22px;
+  position:absolute;top:4px;bottom:4px;left:0;width:0;z-index:0;opacity:0;
+  background:var(--accent-soft);border-radius:18px;
   transition:left .3s var(--ease), width .3s var(--ease), opacity .2s;
   pointer-events:none;
 }
@@ -1128,3 +1127,5 @@ body.locked #fabMenu{display:none}
   .fab-sheet,.fab-sheet.show{transition:none}
   .fab-scrim{animation:none}
 }
+#fab{transition:transform .3s var(--ease), bottom .28s var(--ease), box-shadow .2s}
+#scanFab{transition:transform .3s var(--ease), box-shadow .2s}
