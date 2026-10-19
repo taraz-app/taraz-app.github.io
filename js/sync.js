@@ -422,10 +422,13 @@ function routeFetch(kind, opts, ms) {
   })(0);
 }
 // ping موازی روی همهٔ مسیرها: آخرین مسیر سالم به‌خاطر سپرده می‌شود
-function pingSyncRoutes(done) {
-  let left = SYNC_ROUTES.length;
+// onlyId: فقط همان یک مسیر را احضار کن (صرفه‌جویی درخواست در بوت)
+function pingSyncRoutes(done, onlyId) {
+  const routes = onlyId ? SYNC_ROUTES.filter((r) => r.id === onlyId) : SYNC_ROUTES;
+  let left = routes.length;
   const healthyIds = [];
-  SYNC_ROUTES.forEach((r) => {
+  if (!routes.length) { if (done) done(workerReachable); return; }
+  routes.forEach((r) => {
     fetchTimeout(r.base + r.p.ping, { cache: 'no-store' }, 4500)
       .then((resp) => {
         routeHealthy[r.id] = resp.ok;
@@ -438,42 +441,63 @@ function pingSyncRoutes(done) {
           const cur = savedRoute();
           const firstHealthy = SYNC_ROUTES.find((r) => healthyIds.includes(r.id));
           if (firstHealthy && !healthyIds.includes(cur.id)) saveRoute(firstHealthy.id);
-          workerReachable = healthyIds.length > 0;
+          if (!onlyId) workerReachable = healthyIds.length > 0;
+          else if (healthyIds.length) workerReachable = true; // سنجش جزعی، ناسالم اعلام نکن
           if (done) done(workerReachable);
         }
       });
   });
 }
-// انتخاب مسیر برای ناوبری ورود (ناوبری ری‌ترای ندارد؛ اول مسیر سالم را پیدا می‌کنیم)
+// انتخاب مسیر برای ناوبری ورود (ناوبری ری‌ترای ندارد)
+// بهینه: مسیرِ ذخیره‌شده را اول تک‌نیب چک کن (حالت معمول: یک رکوئست)؛
+// فقط اگر ناسالم بود، رقابتِ موازی روی بقا.
 function pickSyncRoute(cb) {
   const cur = savedRoute();
   if (routeHealthy[cur.id]) return cb(cur);
   const known = SYNC_ROUTES.find((r) => routeHealthy[r.id]);
   if (known) { saveRoute(known.id); return cb(known); }
+  const rest = SYNC_ROUTES.filter((r) => r.id !== cur.id);
   let doneFlag = false;
-  let pending = SYNC_ROUTES.length;
+  let pending = rest.length;
   const finish = (r) => {
     if (doneFlag) return;
     doneFlag = true;
     if (r) saveRoute(r.id);
     cb(r);
   };
-  SYNC_ROUTES.forEach((r) => {
-    fetchTimeout(r.base + r.p.ping, { cache: 'no-store' }, 4000)
-      .then((resp) => {
-        routeHealthy[r.id] = resp.ok;
-        if (resp.ok) finish(r);
-      })
-      .catch(() => { routeHealthy[r.id] = false; })
-      .finally(() => {
-        pending -= 1;
-        if (pending === 0 && !doneFlag) {
-          const g = SYNC_ROUTES.find((x) => routeHealthy[x.id]);
-          if (!g) workerReachable = false;
-          finish(g || null);
-        }
-      });
-  });
+  const raceRest = () => {
+    if (!rest.length) {
+      const g = SYNC_ROUTES.find((x) => routeHealthy[x.id]);
+      if (!g) workerReachable = false;
+      return finish(g || null);
+    }
+    rest.forEach((r) => {
+      fetchTimeout(r.base + r.p.ping, { cache: 'no-store' }, 4000)
+        .then((resp) => {
+          routeHealthy[r.id] = resp.ok;
+          if (resp.ok) finish(r);
+        })
+        .catch(() => { routeHealthy[r.id] = false; })
+        .finally(() => {
+          pending -= 1;
+          if (pending === 0 && !doneFlag) {
+            const g = SYNC_ROUTES.find((x) => routeHealthy[x.id]);
+            if (!g) workerReachable = false;
+            finish(g || null);
+          }
+        });
+    });
+  };
+  fetchTimeout(cur.base + cur.p.ping, { cache: 'no-store' }, 4000)
+    .then((resp) => {
+      routeHealthy[cur.id] = resp.ok;
+      if (resp.ok) { saveRoute(cur.id); return cb(cur); }
+      raceRest();
+    })
+    .catch(() => {
+      routeHealthy[cur.id] = false;
+      raceRest();
+    });
 }
 function startWorkerLogin() {
   const app = location.origin; // مبدأ اپ — Worker فقط همین را با مقدار مجاز مقایسه می‌کند
@@ -1351,7 +1375,7 @@ export function initGoogleOnLoad() {
   if (initDone) return;
   initDone = true;
   setTimeout(updateAvatar, 0);
-  pingSyncRoutes(); // سنجش موازی مسیرها و به‌خاطر سپردن مسیر سالم
+  pingSyncRoutes(null, savedRoute().id); // فقط مسیرِ ذخیره‌شده: یک پینگ در هر بوت، نه دو تا
   const u = store.get('g_user');
   if (u) {
     try {
