@@ -1110,6 +1110,7 @@ header{backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14
 .fab-sheet.show{transform:translate(-50%,0);pointer-events:auto}
 .fs-grab{width:38px;height:4px;border-radius:99px;background:var(--border);margin:2px auto 12px}
 .fs-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.fs-grid.cols2{grid-template-columns:repeat(2,1fr)}
 .fs-it{display:flex;flex-direction:column;align-items:center;gap:7px;background:transparent;border:0;font:inherit;cursor:pointer;padding:6px 2px;border-radius:16px;color:var(--text)}
 .fs-it:active{background:var(--press)}
 .fm-ic{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;box-shadow:var(--shadow-1)}

@@ -633,26 +633,48 @@ paintShellIcons();
     menu.removeAttribute('hidden');
     scrim.hidden = !open;
     fab.classList.toggle('open', open);
-    if (open) haptic(8);
-  };
-  fab.onclick = () => window.setFabMenu(!menu.classList.contains('show'));
-  scrim.onclick = () => window.setFabMenu(false);
-})();
-
-// دکمهٔ دوربین: یک تپ → دوربین برای خواندن فاکتور (در صورت نیاز اول فرم باز می‌شود)
-(function setupScanFab() {
-  const sc = document.getElementById('scanFab');
-  if (!sc) return;
-  sc.innerHTML = icon('camera');
-  sc.onclick = () => {
-    haptic(6);
-    if (!document.getElementById('scanCam')) {
-      openTxForm(); // ورودی‌های اسکن داخل فرم ساخته می‌شوند
-      setTimeout(() => startScan('cam'), 120);
-    } else {
-      startScan('cam');
+    if (open) {
+      const ss = document.getElementById('scanSheet');
+      if (ss) ss.classList.remove('show');
+      haptic(8);
     }
   };
+  fab.onclick = () => window.setFabMenu(!menu.classList.contains('show'));
+  scrim.onclick = () => {
+    window.setFabMenu(false);
+    if (window.setScanMenu) window.setScanMenu(false);
+  };
+})();
+
+// دکمهٔ دوربین: اول پیشنهاد «گالری / دوربین»، بعد خواندن فاکتور
+(function setupScanFab() {
+  const sc = document.getElementById('scanFab');
+  const sheet = document.getElementById('scanSheet');
+  const scrim = document.getElementById('fabScrim');
+  if (!sc || !sheet || !scrim) return;
+  sc.innerHTML = icon('camera');
+  window.setScanMenu = function (open) {
+    sheet.classList.toggle('show', open);
+    if (open) {
+      if (window.setFabMenu) window.setFabMenu(false);
+      haptic(8);
+    }
+    scrim.hidden = !open;
+  };
+  sc.onclick = () => window.setScanMenu(!sheet.classList.contains('show'));
+  const items = { scCam: { ic: 'camera', kind: 'cam' }, scGal: { ic: 'image', kind: 'gal' } };
+  Object.entries(items).forEach(([id, it]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const ic = el.querySelector('.fm-ic');
+    if (ic) ic.innerHTML = icon(it.ic);
+    el.onclick = () => {
+      window.setScanMenu(false);
+      const needForm = !document.getElementById('scanCam'); // ورودی‌ها فقط داخل فرم ساخته می‌شوند
+      if (needForm) openTxForm();
+      setTimeout(() => startScan(it.kind), needForm ? 250 : 30);
+    };
+  });
 })();
 
 // مخفی‌کردن نرم دکمه‌های شناور هنگام اسکرول به پایین، بازگشت در اسکرول به بالا
@@ -661,7 +683,9 @@ paintShellIcons();
   window.addEventListener('scroll', () => {
     const y = window.scrollY || 0;
     const menu = document.getElementById('fabMenu');
-    if (menu && menu.classList.contains('show')) {
+    const sm = document.getElementById('scanSheet');
+    const anyOpen = (menu && menu.classList.contains('show')) || (sm && sm.classList.contains('show'));
+    if (anyOpen) {
       document.body.classList.remove('fabsHidden');
       lastY = y;
       return;
