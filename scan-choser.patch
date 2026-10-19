@@ -1,0 +1,211 @@
+From a6622f8b30d13d3721aac521848aeebb1d318c6b Mon Sep 17 00:00:00 2001
+From: aminchat <55949091+aminchat@users.noreply.github.com>
+Date: Mon, 19 Oct 2026 13:31:00 +0000
+Subject: [PATCH] ui: camera FAB now offers gallery/camera chooser sheet first
+ (no tx-form flash); new 'image' icon; sheets & scrim mutually exclusive;
+ v2.38.25, sw v135
+
+Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+---
+ README.fa.md |  2 +-
+ README.md    |  2 +-
+ css/app.css  |  1 +
+ index.html   | 11 +++++++++--
+ js/app.js    | 48 ++++++++++++++++++++++++++++++++++++------------
+ js/icons.js  |  1 +
+ js/utils.js  |  4 ++--
+ sw.js        |  2 +-
+ 8 files changed, 52 insertions(+), 19 deletions(-)
+
+diff --git a/README.fa.md b/README.fa.md
+index 6d1b059..da83572 100644
+--- a/README.fa.md
++++ b/README.fa.md
+@@ -108,7 +108,7 @@ python3 -m http.server 8080
+ 
+ ## نسخه
+ 
+-فعلی: `2.38.24` (ریشه) / `2.38.24-test` (آزمایشی). رشتهٔ نسخه در `js/utils.js` (`APP_VERSION`) است و در تنظیمات ← دربارهٔ برنامه نمایش داده می‌شود.
++فعلی: `2.38.25` (ریشه) / `2.38.25-test` (آزمایشی). رشتهٔ نسخه در `js/utils.js` (`APP_VERSION`) است و در تنظیمات ← دربارهٔ برنامه نمایش داده می‌شود.
+ 
+ ## مجوز
+ 
+diff --git a/README.md b/README.md
+index 1ec1536..d1098d1 100644
+--- a/README.md
++++ b/README.md
+@@ -108,7 +108,7 @@ All amounts are stored in the account’s own currency; the base currency is use
+ 
+ ## Version
+ 
+-Current: `2.38.24` (root) / `2.38.24-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
++Current: `2.38.25` (root) / `2.38.25-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+ 
+ ## License
+ 
+diff --git a/css/app.css b/css/app.css
+index c7b3d1f..537164d 100644
+--- a/css/app.css
++++ b/css/app.css
+@@ -1110,6 +1110,7 @@ header{backdrop-filter:blur(14px) saturate(1.35);-webkit-backdrop-filter:blur(14
+ .fab-sheet.show{transform:translate(-50%,0);pointer-events:auto}
+ .fs-grab{width:38px;height:4px;border-radius:99px;background:var(--border);margin:2px auto 12px}
+ .fs-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
++.fs-grid.cols2{grid-template-columns:repeat(2,1fr)}
+ .fs-it{display:flex;flex-direction:column;align-items:center;gap:7px;background:transparent;border:0;font:inherit;cursor:pointer;padding:6px 2px;border-radius:16px;color:var(--text)}
+ .fs-it:active{background:var(--press)}
+ .fm-ic{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;box-shadow:var(--shadow-1)}
+diff --git a/index.html b/index.html
+index 2b4e7bb..269ebe7 100644
+--- a/index.html
++++ b/index.html
+@@ -11,7 +11,7 @@
+ <link rel="apple-touch-icon" href="icons/icon-192.png?v=5">
+ <link rel="icon" type="image/png" href="icons/icon-192.png?v=5">
+ <link rel="stylesheet" href="https://fonts.bunny.net/css?family=vazirmatn:400,600,700&display=swap">
+-<link rel="stylesheet" href="css/app.css?v=2.38.24">
++<link rel="stylesheet" href="css/app.css?v=2.38.25">
+ <script>
+ window.__capErrors = [];
+ window.__capLog = function (where, err) {
+@@ -116,6 +116,13 @@ try {
+     <button type="button" class="fs-it" id="fmInst"><span class="fm-ic fm-ic-orange"></span><span class="fs-lb">اقساط و وام</span></button>
+   </div>
+ </div>
++<div id="scanSheet" class="fab-sheet">
++  <div class="fs-grab"></div>
++  <div class="fs-grid cols2">
++    <button type="button" class="fs-it" id="scCam"><span class="fm-ic fm-ic-blue"></span><span class="fs-lb">دوربین</span></button>
++    <button type="button" class="fs-it" id="scGal"><span class="fm-ic fm-ic-green"></span><span class="fs-lb">گالری</span></button>
++  </div>
++</div>
+ 
+ 
+ <div class="overlay" id="overlay">
+@@ -140,6 +147,6 @@ try {
+   </div>
+ </div>
+ 
+-<script type="module" src="js/boot.js?v=2.38.24"></script>
++<script type="module" src="js/boot.js?v=2.38.25"></script>
+ </body>
+ </html>
+diff --git a/js/app.js b/js/app.js
+index 264d547..6cfc710 100644
+--- a/js/app.js
++++ b/js/app.js
+@@ -633,26 +633,48 @@ paintShellIcons();
+     menu.removeAttribute('hidden');
+     scrim.hidden = !open;
+     fab.classList.toggle('open', open);
+-    if (open) haptic(8);
++    if (open) {
++      const ss = document.getElementById('scanSheet');
++      if (ss) ss.classList.remove('show');
++      haptic(8);
++    }
+   };
+   fab.onclick = () => window.setFabMenu(!menu.classList.contains('show'));
+-  scrim.onclick = () => window.setFabMenu(false);
++  scrim.onclick = () => {
++    window.setFabMenu(false);
++    if (window.setScanMenu) window.setScanMenu(false);
++  };
+ })();
+ 
+-// دکمهٔ دوربین: یک تپ → دوربین برای خواندن فاکتور (در صورت نیاز اول فرم باز می‌شود)
++// دکمهٔ دوربین: اول پیشنهاد «گالری / دوربین»، بعد خواندن فاکتور
+ (function setupScanFab() {
+   const sc = document.getElementById('scanFab');
+-  if (!sc) return;
++  const sheet = document.getElementById('scanSheet');
++  const scrim = document.getElementById('fabScrim');
++  if (!sc || !sheet || !scrim) return;
+   sc.innerHTML = icon('camera');
+-  sc.onclick = () => {
+-    haptic(6);
+-    if (!document.getElementById('scanCam')) {
+-      openTxForm(); // ورودی‌های اسکن داخل فرم ساخته می‌شوند
+-      setTimeout(() => startScan('cam'), 120);
+-    } else {
+-      startScan('cam');
++  window.setScanMenu = function (open) {
++    sheet.classList.toggle('show', open);
++    if (open) {
++      if (window.setFabMenu) window.setFabMenu(false);
++      haptic(8);
+     }
++    scrim.hidden = !open;
+   };
++  sc.onclick = () => window.setScanMenu(!sheet.classList.contains('show'));
++  const items = { scCam: { ic: 'camera', kind: 'cam' }, scGal: { ic: 'image', kind: 'gal' } };
++  Object.entries(items).forEach(([id, it]) => {
++    const el = document.getElementById(id);
++    if (!el) return;
++    const ic = el.querySelector('.fm-ic');
++    if (ic) ic.innerHTML = icon(it.ic);
++    el.onclick = () => {
++      window.setScanMenu(false);
++      const needForm = !document.getElementById('scanCam'); // ورودی‌ها فقط داخل فرم ساخته می‌شوند
++      if (needForm) openTxForm();
++      setTimeout(() => startScan(it.kind), needForm ? 250 : 30);
++    };
++  });
+ })();
+ 
+ // مخفی‌کردن نرم دکمه‌های شناور هنگام اسکرول به پایین، بازگشت در اسکرول به بالا
+@@ -661,7 +683,9 @@ paintShellIcons();
+   window.addEventListener('scroll', () => {
+     const y = window.scrollY || 0;
+     const menu = document.getElementById('fabMenu');
+-    if (menu && menu.classList.contains('show')) {
++    const sm = document.getElementById('scanSheet');
++    const anyOpen = (menu && menu.classList.contains('show')) || (sm && sm.classList.contains('show'));
++    if (anyOpen) {
+       document.body.classList.remove('fabsHidden');
+       lastY = y;
+       return;
+diff --git a/js/icons.js b/js/icons.js
+index 5c1fe1f..ba43084 100644
+--- a/js/icons.js
++++ b/js/icons.js
+@@ -47,6 +47,7 @@ const P = {
+   copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+   swap: '<path d="M7 16V4"/><path d="M3 8l4-4 4 4"/><path d="M17 8v12"/><path d="M13 16l4 4 4-4"/>',
+   camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
++  image: '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M21 15l-5-5L5 19"/>',
+   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M3 10h18"/>',
+   bell: '<path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+diff --git a/js/utils.js b/js/utils.js
+index 9ba7b06..30046b6 100644
+--- a/js/utils.js
++++ b/js/utils.js
+@@ -1,5 +1,5 @@
+ export const FA = '۰۱۲۳۴۵۶۷۸۹';
+-export const APP_VERSION = '2.38.24';
++export const APP_VERSION = '2.38.25';
+ 
+ let faDigits = true;
+ export function setFaDigits(on) {
+@@ -577,7 +577,7 @@ if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined')
+   }).observe(document.documentElement, { childList: true, subtree: true });
+ }
+ 
+-/* ═══ لذت‌های بصری v2.38.24 ═══ */
++/* ═══ لذت‌های بصری v2.38.25 ═══ */
+ 
+ // شمارشِ نرمِ اعداد: از مقدار قبلی به مقدار جدید (المنت‌هایی با data-count)
+ // حافظهٔ آخرینِ مقدارِ نمایش‌یافتهٔ هر عدد — برای این‌که در رندرهای پشت‌سرهم،
+diff --git a/sw.js b/sw.js
+index 93f428d..793c43a 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,4 +1,4 @@
+-const CACHE = 'capital-app-v134';
++const CACHE = 'capital-app-v135';
+ const ASSETS = [
+   './',
+   './index.html',
+-- 
+2.39.5
