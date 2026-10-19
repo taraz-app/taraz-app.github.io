@@ -277,7 +277,7 @@ function moveBnPill() {
   if (!nav || !pill) return;
   const on = nav.querySelector('.bn.on');
   if (!on) { pill.style.opacity = '0'; return; }
-  const PILL_W = 62;
+  const PILL_W = 64;
   pill.style.left = Math.round(on.offsetLeft + (on.offsetWidth - PILL_W) / 2) + 'px';
   pill.style.opacity = '1';
 }
@@ -609,7 +609,7 @@ window.onBookChanged = () => {
   switchTab('home');
 };
 paintShellIcons();
-// منوی سریعِ FAB: تراکنش / طلب و بدهی / سرمایه / اقساط (به سبک مدادِ تلگرام)
+// منوی سریعِ FAB به شیت کشویی تلگرامی: تراکنش / طلب و بدهی / سرمایه / اقساط
 (function setupFabMenu() {
   const fab = document.getElementById('fab');
   const menu = document.getElementById('fabMenu');
@@ -629,12 +629,13 @@ paintShellIcons();
     el.onclick = () => { setFabMenu(false); items[id].fn(); };
   });
   window.setFabMenu = function (open) {
-    menu.hidden = !open;
+    menu.classList.toggle('show', open);
+    menu.removeAttribute('hidden');
     scrim.hidden = !open;
     fab.classList.toggle('open', open);
     if (open) haptic(8);
   };
-  fab.onclick = () => window.setFabMenu(menu.hidden);
+  fab.onclick = () => window.setFabMenu(!menu.classList.contains('show'));
   scrim.onclick = () => window.setFabMenu(false);
 })();
 document.querySelectorAll('#bottomNav .bn').forEach((b) => {

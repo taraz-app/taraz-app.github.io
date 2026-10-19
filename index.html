@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=5">
 <link rel="icon" type="image/png" href="icons/icon-192.png?v=5">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=vazirmatn:400,600,700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=2.38.18">
+<link rel="stylesheet" href="css/app.css?v=2.38.19">
 <script>
 window.__capErrors = [];
 window.__capLog = function (where, err) {
@@ -106,11 +106,14 @@ try {
 </nav>
 <button id="fab" title="ثبت سریع" aria-label="افزودن"></button>
 <div id="fabScrim" class="fab-scrim" hidden></div>
-<div id="fabMenu" class="fab-menu" hidden>
-  <button type="button" class="fm-it" id="fmInst"><span class="fm-ic fm-ic-orange"></span><span class="fm-lb">اقساط و وام</span></button>
-  <button type="button" class="fm-it" id="fmInv"><span class="fm-ic fm-ic-green"></span><span class="fm-lb">سرمایه‌گذاری</span></button>
-  <button type="button" class="fm-it" id="fmDebt"><span class="fm-ic fm-ic-purple"></span><span class="fm-lb">طلب و بدهی</span></button>
-  <button type="button" class="fm-it" id="fmTx"><span class="fm-ic fm-ic-blue"></span><span class="fm-lb">تراکنش</span></button>
+<div id="fabMenu" class="fab-sheet">
+  <div class="fs-grab"></div>
+  <div class="fs-grid">
+    <button type="button" class="fs-it" id="fmTx"><span class="fm-ic fm-ic-blue"></span><span class="fs-lb">تراکنش</span></button>
+    <button type="button" class="fs-it" id="fmDebt"><span class="fm-ic fm-ic-purple"></span><span class="fs-lb">طلب و بدهی</span></button>
+    <button type="button" class="fs-it" id="fmInv"><span class="fm-ic fm-ic-green"></span><span class="fs-lb">سرمایه‌گذاری</span></button>
+    <button type="button" class="fs-it" id="fmInst"><span class="fm-ic fm-ic-orange"></span><span class="fs-lb">اقساط و وام</span></button>
+  </div>
 </div>
 
 
@@ -136,6 +139,6 @@ try {
   </div>
 </div>
 
-<script type="module" src="js/boot.js?v=2.38.18"></script>
+<script type="module" src="js/boot.js?v=2.38.19"></script>
 </body>
 </html>
