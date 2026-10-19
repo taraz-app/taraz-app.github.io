@@ -19,6 +19,13 @@ function cors(req, res) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
+// سقفِ زمانی تابع: پیش‌فرضِ پروژه‌های قدیمیِ ورسل ۱۰ ثانیه است و خواندن عکس با
+// Gemini گاهی بیشتر طول می‌کشد → ۵۰۴ و پیامِ گمراه‌کننده سمت برنامه. ۶۰ ثانیه
+// روی پلن Hobby مجاز است. (دقت: این خط باید در همان فایلی باشد که دیپلوی می‌شود.)
+export const maxDuration = 60;
+// توجه: `export const config = { api: { bodyParser: … } }` سینتکس Next.js است و روی
+// تابعِ serverless ورسل بی‌اثر است؛ سقفِ بدنه ۴٫۵MB سخت است و با ۴۱۳ «پیش از اجرای
+// تابع» رد می‌شود. برنامه سمت کلاینت عکسِ سنگین‌تر از این را خودش کوچک‌تر فشرده می‌کند.
 export const config = { api: { bodyParser: { sizeLimit: '4.5mb' } } };
 
 export default async function handler(req, res) {

@@ -16,6 +16,7 @@ import { openCatReport, openSubReport, openTitleItems,
   csDelete2,
   csDelete3, openQuickCategorize, qcPick } from './subsui.js';
 import { closeModal, openModal, closeSubModal } from './modal.js';
+import { hasGeminiKey } from './scan.js';
 import { render, setRender } from './view.js';
 import { setOnSave, state, curStats } from './state.js';
 import { guideAfterRender } from './guide.js';
@@ -670,11 +671,11 @@ paintShellIcons();
     if (ic) ic.innerHTML = icon(it.ic);
     el.onclick = () => {
       window.setScanMenu(false);
-      const needForm = !document.getElementById('scanCam'); // ورودی‌ها فقط داخل فرم ساخته می‌شوند
-      // فرمِ کامل باز شود: فرمِ سریع (کیبورد) ورودی‌های scanCam/scanGal ندارد،
-      // پس بدون full هیچ فایل‌پیکی باز نمی‌شد
-      if (needForm) openTxForm(null, { full: true });
-      setTimeout(() => startScan(it.kind), needForm ? 250 : 30);
+      if (!hasGeminiKey()) { toast(tr('اول در تنظیمات کلید عکس را بگذار')); return; }
+      // عکس اول گرفته و خوانده می‌شود؛ فرمِ مرتبط را onScanPhoto بعد از خواندن باز می‌کند.
+      // دیگر فرم را از قبل باز نمی‌کنیم: closeModal شیت را خالی نمی‌کند و حدسِ
+      // «فرم لازم دارد؟» باعث می‌شد گاهی فرم بیاید و گاهی نیاید.
+      startScan(it.kind);
     };
   });
 })();

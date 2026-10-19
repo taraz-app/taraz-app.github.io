@@ -11,6 +11,49 @@ const MODELS_CACHE_KEY = 'capital_gemini_models_v1';
 const GOOD_MODEL_KEY = 'capital_gemini_model_ok';
 const MODELS_CACHE_TTL = 7 * 24 * 3600 * 1000; // یک هفته
 
+// ── انتخاب مسیر: اول پینگِ مسیرِ مستقیمِ گوگل؛ اگر باز بود از همان می‌رویم،
+//    و اگر پینگ نداشت (فیلتر/DNS/تایم‌اوت) از پلِ ورسل. نتیجهٔ پینگ کش می‌شود
+//    تا برای هر اسکن یک رفت‌وبرگشت اضافه نپردازیم.
+const GAPI_ROOT = 'https://generativelanguage.googleapis.com/v1beta/models';
+const DIRECT_OK_KEY = 'capital_gemini_direct_ok';
+const DIRECT_OK_TTL = 10 * 60 * 1000; // ده دقیقه
+const REGION_BLOCKED = /user location is not supported|unavailable in your country|not supported in your (country|region)/i;
+
+function readDirectOk() {
+  try {
+    const raw = store.get(DIRECT_OK_KEY);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    if (!o || Date.now() - (o.at || 0) > DIRECT_OK_TTL) return null;
+    return !!o.ok;
+  } catch (e) { return null; }
+}
+export function saveDirectOk(ok) {
+  try { store.set(DIRECT_OK_KEY, JSON.stringify({ at: Date.now(), ok: !!ok })); } catch (e) {}
+}
+// پینگِ بدون مصرف سهمیه: بدون کلید صدا می‌زنیم؛ هر جواب HTTP از گوگل یعنی مسیر باز است.
+// اگر ۴۰۳ «در منطقهٔ شما در دسترس نیست» بدهد، مسیر مستقیم به درد نمی‌خورد (پل لازم است).
+async function probeDirect(timeoutMs) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, timeoutMs || 4000);
+  try {
+    const r = await fetch(GAPI_ROOT, { signal: ctl.signal });
+    const body = await r.text().catch(() => '');
+    if (r.status === 403 && REGION_BLOCKED.test(body)) return false;
+    return true;
+  } catch (e) {
+    return false; // fetch شکست = مسیر مستقیم بسته است
+  } finally {
+    clearTimeout(timer);
+  }
+}
+export async function directRouteOk(force) {
+  if (!force) { const cached = readDirectOk(); if (cached !== null) return cached; }
+  const ok = await probeDirect();
+  saveDirectOk(ok);
+  return ok;
+}
+
 function readModelsCache() {
   try {
     const raw = store.get(MODELS_CACHE_KEY);
@@ -30,7 +73,10 @@ async function geminiProxy(payload) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (resp.status === 404 || resp.status >= 500) throw Object.assign(new Error('proxy-down'), { proxyDown: true, status: resp.status });
+  // ۴۰۴ = پل نصب نیست؛ ۴۱۳ = بدنه از سقفِ سختِ ۴٫۵MB ورسل گذشته (پیش از اجرای تابع رد می‌شود)؛
+  // ۴۰۸/۴۲۵ = تایم‌اوت؛ ۵xx = خودِ ورسل/تابع. همه یعنی «پل جواب نمی‌دهد» → مسیر دیگر امتحان شود.
+  if (resp.status === 404 || resp.status === 408 || resp.status === 413 || resp.status === 425 || resp.status >= 500)
+    throw Object.assign(new Error('proxy-down'), { proxyDown: true, status: resp.status });
   return resp;
 }
 const MODELS = [
@@ -173,38 +219,55 @@ function parseModelJson(text) {
   return null;
 }
 
-async function callGemini(model, key, b64, prompt, jsonMode) {
-  let resp = null;
+function genBody(prompt, b64, jsonMode) {
+  const generationConfig = { temperature: 0.1 };
+  if (jsonMode) generationConfig.responseMimeType = 'application/json';
+  return JSON.stringify({
+    contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: b64 } }] }],
+    generationConfig,
+  });
+}
+async function directGenerate(model, key, prompt, b64, jsonMode) {
+  const url = GAPI_ROOT + '/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
   try {
-    resp = await geminiProxy({ key, model, prompt, imageB64: b64, jsonMode: !!jsonMode });
-  } catch (e) {
-    /* پراکسی در دسترس نیست یا هنوز نصب نشده → مسیر مستقیم گوگل */
-  }
-  if (!resp) {
-    const url =
-      'https://generativelanguage.googleapis.com/v1beta/models/' +
-      encodeURIComponent(model) +
-      ':generateContent?key=' +
-      encodeURIComponent(key);
-    const gen = { temperature: 0.1 };
-    if (jsonMode) gen.responseMimeType = 'application/json';
-    resp = await fetch(url, {
+    return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
-              { inlineData: { mimeType: 'image/jpeg', data: b64 } },
-            ],
-          },
-        ],
-        generationConfig: gen,
-      }),
+      body: genBody(prompt, b64, jsonMode),
     });
+  } catch (e) {
+    return null; // مسیر مستقیم بسته است → پلِ ورسل
   }
-  const data = await resp.json().catch(() => ({}));
+}
+async function proxyGenerate(key, model, prompt, b64, jsonMode) {
+  try {
+    return await geminiProxy({ key, model, prompt, imageB64: b64, jsonMode: !!jsonMode });
+  } catch (e) {
+    return null; // پل در دسترس نیست → مسیر مستقیم
+  }
+}
+async function callGemini(model, key, b64, prompt, jsonMode) {
+  // ترتیب از روی پینگ: اول مسیری که باز بود، بعد یکی یدک
+  const order = (await directRouteOk()) === true ? ['direct', 'proxy'] : ['proxy', 'direct'];
+  let resp = null;
+  let data = null;
+  for (const route of order) {
+    resp = route === 'direct'
+      ? await directGenerate(model, key, prompt, b64, jsonMode)
+      : await proxyGenerate(key, model, prompt, b64, jsonMode);
+    if (!resp) continue;
+    data = await resp.json().catch(() => ({}));
+    if (resp.ok) break;
+    // بلاکِ منطقه‌ای روی مسیر مستقیم → کشِ پینگ اصلاح شود و از پل برویم
+    if (route === 'direct' && resp.status === 403 && REGION_BLOCKED.test(String((data.error && data.error.message) || ''))) {
+      saveDirectOk(false);
+      resp = null;
+      data = null;
+      continue;
+    }
+    break; // خطای واقعی (کلید نامعتبر / سهمیه / مدل مرده) → همان را نشان بده
+  }
+  if (!resp) throw Object.assign(new Error('no-route'), { noRoute: true });
   if (!resp.ok) {
     const msg = (data.error && data.error.message) || 'خطای ' + resp.status;
     const err = new Error(msg);
@@ -223,28 +286,32 @@ async function callGemini(model, key, b64, prompt, jsonMode) {
 function shortErr(e) {
   const raw = (e && e.message) || String(e || '');
   const s = raw.toLowerCase();
+  if (e && e.noRoute) return 'نه گوگل جواب داد نه پلِ ورسل؛ اینترنت را چک کن و دوباره امتحان کن';
   if (s.includes('api key') || s.includes('api_key')) return 'کلید نامعتبر است؛ در تنظیمات دوباره ذخیره کن';
-  if (s.includes('permission') || s.includes('403')) return 'کلید اجازه این کار را ندارد';
   if (s.includes('quota') || s.includes('resource exhausted')) return 'سهمیه رایگان گوگل تمام شده';
+  if (REGION_BLOCKED.test(raw)) return 'گوگل از این منطقه جواب نمی‌دهد؛ با فیلترشکن یا کلیدِ بدون محدودیتِ منطقه امتحان کن';
+  if (s.includes('permission') || s.includes('403')) return 'کلید اجازه این کار را ندارد';
+  if (s.includes('413') || s.includes('payload too large')) return 'عکس خیلی سنگین است؛ از نزدیک‌تر و با نور بهتر بگیر';
   if (s.includes('not found') || s.includes('supported methods') || s.includes('listmodels'))
     return 'مدل گوگل عوض شده؛ یک‌بار دیگر عکس را بفرست';
-  if (s.includes('location') || s.includes('not supported') || s.includes('unavailable in your country')) return 'فیلترشکن را روشن کن';
-  if (s.includes('failed to fetch') || s.includes('network')) return 'فیلترشکن را روشن کن';
+  if (s.includes('failed to fetch') || s.includes('network') || s.includes('aborted'))
+    return 'اتصال برقرار نشد؛ اینترنت را چک کن (اگر فیلترشکن لازم داری، روشنش کن)';
   const cut = raw.replace(/\s+/g, ' ').trim();
   return cut.length > 80 ? cut.slice(0, 80) + '…' : cut || 'خواندن عکس نشد';
 }
 
 async function listModels(key) {
+  // همان ترتیبِ پینگ: اول مسیر مستقیم اگر باز بود، وگرنه پلِ ورسل؛ و اگر اولی جواب نداد، دومی
+  const directUrl = GAPI_ROOT + '?key=' + encodeURIComponent(key);
+  const direct = () => fetch(directUrl).catch(() => null);
+  const proxy = () => geminiProxy({ action: 'list', key }).catch(() => null);
+  const routes = (await directRouteOk()) === true ? [direct, proxy] : [proxy, direct];
   let resp = null;
-  try {
-    resp = await geminiProxy({ action: 'list', key });
-  } catch (e) {
-    /* پراکسی نیست → مستقیم */
+  for (const run of routes) {
+    resp = await run();
+    if (resp) break;
   }
-  if (!resp) {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(key);
-    resp = await fetch(url);
-  }
+  if (!resp) throw Object.assign(new Error('no-route'), { noRoute: true });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const err = new Error((data.error && data.error.message) || 'لیست مدل نیامد');
@@ -281,7 +348,15 @@ export function lastJpegB64() {
 async function readWithGemini(file, prompt, opts) {
   const key = getGeminiKey();
   if (!key) throw new Error('NO_KEY');
-  const b64 = await fileToJpeg(file, opts && opts.max, opts && opts.quality);
+  let b64 = await fileToJpeg(file, opts && opts.max, opts && opts.quality);
+  // سقفِ بدنهٔ ورسل ۴٫۵MB و سخت است (۴۱۳ پیش از اجرای تابع). عکسِ سنگین را یک بار
+  // کوچک‌تر فشرده می‌کنیم تا مسیرِ پل هم وقتی مسیر مستقیم بسته است کار کند.
+  if (b64.length > 3400000) {
+    try {
+      const smaller = await fileToJpeg(file, 1600, 0.8);
+      if (smaller && smaller.length < b64.length) b64 = smaller;
+    } catch (e) {}
+  }
   lastB64 = b64;
   let models = MODELS.slice();
   const cachedList = readModelsCache();
@@ -330,7 +405,10 @@ async function readWithGemini(file, prompt, opts) {
         if (good === model) store.set(GOOD_MODEL_KEY, '');
         store.set(MODELS_CACHE_KEY, '');
       }
-      if (!skip && lastErr.status && lastErr.status !== 429) break;
+      if (lastErr.noRoute) break; // هر دو مسیر بسته‌اند؛ مدل بعدی هم فایده ندارد
+      // سهمیه که تمام شده، مدل بعدی هم همان را می‌گوید؛ کاربر را معطل نکن
+      if (lastErr.status === 429 || msg.includes('quota') || msg.includes('resource exhausted')) break;
+      if (!skip && lastErr.status) break;
     }
   }
   throw new Error(shortErr(lastErr || new Error('خواندن عکس نشد')));

@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=5">
 <link rel="icon" type="image/png" href="icons/icon-192.png?v=5">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=vazirmatn:400,600,700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=2.38.25">
+<link rel="stylesheet" href="css/app.css?v=2.38.26">
 <script>
 window.__capErrors = [];
 window.__capLog = function (where, err) {
@@ -123,6 +123,9 @@ try {
     <button type="button" class="fs-it" id="scGal"><span class="fm-ic fm-ic-green"></span><span class="fs-lb">گالری</span></button>
   </div>
 </div>
+<!-- ورودی‌های دائمی اسکن برای دکمهٔ شناور: عکس اول گرفته/خوانده می‌شود، فرمِ مرتبط بعد از خواندن بالا می‌آید -->
+<input id="fabScanCam" type="file" accept="image/*" capture="environment" style="display:none" onchange="onScanPhoto(this)">
+<input id="fabScanGal" type="file" accept="image/*" style="display:none" onchange="onScanPhoto(this)">
 
 
 <div class="overlay" id="overlay">
@@ -147,6 +150,6 @@ try {
   </div>
 </div>
 
-<script type="module" src="js/boot.js?v=2.38.25"></script>
+<script type="module" src="js/boot.js?v=2.38.26"></script>
 </body>
 </html>

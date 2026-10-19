@@ -921,9 +921,15 @@ async function paintScanHist() {
       <button type="button" class="btn sm ghost" style="color:var(--red)" onclick="dropScan('${r.id}')">${icon('trash')}</button>
     </div>`).join('')}</div>`;
 }
+// فرم تراکنش «باز» است؟ فقط بودنِ #txAmount کافی نیست: closeModal شیت را خالی نمی‌کند،
+// پس فرمِ بسته هم در DOM می‌ماند و اگر این را نبینیم نتیجهٔ اسکن در فرمِ پنهان نوشته می‌شود
+function txFormVisible() {
+  const ov = document.getElementById('overlay');
+  return !!document.getElementById('txAmount') && !!ov && ov.classList.contains('show');
+}
 function applyScanResult(res) {
   if (res.kind === 'invoice') {
-    if (!document.getElementById('txAmount')) openTxForm(null, { full: true });
+    if (!txFormVisible()) openTxForm(null, { full: true });
     paperDraft = [];
     applyInvoiceScan(res.invoice);
     scanVerdict('invoice');
@@ -952,8 +958,11 @@ export async function dropScan(id) {
   await deleteScan(id);
   paintScanHist();
 }
+// ورودیِ داخل فرم اول؛ اگر فرم باز نباشد، ورودیِ دائمیِ دکمهٔ شناور (index.html)
 export function startScan(kind) {
-  const inp = document.getElementById(kind === 'gal' ? 'scanGal' : 'scanCam');
+  const gal = kind === 'gal';
+  const inp = document.getElementById(gal ? 'scanGal' : 'scanCam')
+    || document.getElementById(gal ? 'fabScanGal' : 'fabScanCam');
   if (inp) inp.click();
 }
 function scanVerdict(kind) {
@@ -974,14 +983,7 @@ export async function onScanPhoto(inp) {
   try {
     const res = await readAnyImage(file, activeAccounts().map((a) => a.name));
     rememberScan(res, lastJpegB64(), file);
-    if (res.kind === 'invoice') {
-      applyInvoiceScan(res.invoice);
-      scanVerdict('invoice');
-      toast(tr('خوانده شد — قبل از ثبت چک کن'));
-    } else {
-      applyPaperRows(res.list);
-      openPaperReview('invoice');
-    }
+    applyScanResult(res); // فرمِ مرتبط بعد از خواندنِ عکس بالا می‌آید، نه قبل از عکس گرفتن
   } catch (e) {
     if (e && e.message === 'NO_KEY') toast(tr('اول در تنظیمات کلید عکس را بگذار'));
     else toast((e && e.message) || tr('خواندن عکس نشد'));
