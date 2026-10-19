@@ -133,7 +133,6 @@ import {
   openRateEdit,
   openTransferForm,
   openTxForm,
-  startScan,
   saveAccount,
   saveBudget,
   saveInvest,
