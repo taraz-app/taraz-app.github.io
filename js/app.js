@@ -133,6 +133,7 @@ import {
   openRateEdit,
   openTransferForm,
   openTxForm,
+  startScan,
   saveAccount,
   saveBudget,
   saveInvest,
@@ -270,15 +271,15 @@ function switchTab(id) {
   window.scrollTo({ top: 0 });
 }
 
-// حبابِ کشویی زیر آیکونِ تب فعال (سبک تلگرام: روی خودِ آیکون متمرکز)
+// حبابِ کشوییِ تب فعال (سبک تلگرام: کل آیتم را می‌پوشاند)
 function moveBnPill() {
   const nav = document.getElementById('bottomNav');
   const pill = document.getElementById('bnPill');
   if (!nav || !pill) return;
   const on = nav.querySelector('.bn.on');
   if (!on) { pill.style.opacity = '0'; return; }
-  const PILL_W = 64;
-  pill.style.left = Math.round(on.offsetLeft + (on.offsetWidth - PILL_W) / 2) + 'px';
+  pill.style.left = on.offsetLeft + 4 + 'px';
+  pill.style.width = on.offsetWidth - 8 + 'px';
   pill.style.opacity = '1';
 }
 window.addEventListener('resize', moveBnPill);
@@ -637,6 +638,39 @@ paintShellIcons();
   };
   fab.onclick = () => window.setFabMenu(!menu.classList.contains('show'));
   scrim.onclick = () => window.setFabMenu(false);
+})();
+
+// دکمهٔ دوربین: یک تپ → دوربین برای خواندن فاکتور (در صورت نیاز اول فرم باز می‌شود)
+(function setupScanFab() {
+  const sc = document.getElementById('scanFab');
+  if (!sc) return;
+  sc.innerHTML = icon('camera');
+  sc.onclick = () => {
+    haptic(6);
+    if (!document.getElementById('scanCam')) {
+      openTxForm(); // ورودی‌های اسکن داخل فرم ساخته می‌شوند
+      setTimeout(() => startScan('cam'), 120);
+    } else {
+      startScan('cam');
+    }
+  };
+})();
+
+// مخفی‌کردن نرم دکمه‌های شناور هنگام اسکرول به پایین، بازگشت در اسکرول به بالا
+(function setupFabScrollHide() {
+  let lastY = 0;
+  window.addEventListener('scroll', () => {
+    const y = window.scrollY || 0;
+    const menu = document.getElementById('fabMenu');
+    if (menu && menu.classList.contains('show')) {
+      document.body.classList.remove('fabsHidden');
+      lastY = y;
+      return;
+    }
+    if (y > lastY + 10 && y > 90) document.body.classList.add('fabsHidden');
+    else if (y < lastY - 10 || y < 70) document.body.classList.remove('fabsHidden');
+    lastY = y;
+  }, { passive: true });
 })();
 document.querySelectorAll('#bottomNav .bn').forEach((b) => {
   b.onclick = () => switchTab(b.dataset.tab);
