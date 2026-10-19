@@ -270,15 +270,15 @@ function switchTab(id) {
   window.scrollTo({ top: 0 });
 }
 
-// حبابِ کشویی زیر تب فعال
+// حبابِ کشویی زیر آیکونِ تب فعال (سبک تلگرام: روی خودِ آیکون متمرکز)
 function moveBnPill() {
   const nav = document.getElementById('bottomNav');
   const pill = document.getElementById('bnPill');
   if (!nav || !pill) return;
   const on = nav.querySelector('.bn.on');
   if (!on) { pill.style.opacity = '0'; return; }
-  pill.style.left = on.offsetLeft + 'px';
-  pill.style.width = on.offsetWidth + 'px';
+  const PILL_W = 62;
+  pill.style.left = Math.round(on.offsetLeft + (on.offsetWidth - PILL_W) / 2) + 'px';
   pill.style.opacity = '1';
 }
 window.addEventListener('resize', moveBnPill);

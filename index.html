@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=5">
 <link rel="icon" type="image/png" href="icons/icon-192.png?v=5">
 <link rel="stylesheet" href="https://fonts.bunny.net/css?family=vazirmatn:400,600,700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=2.38.16">
+<link rel="stylesheet" href="css/app.css?v=2.38.17">
 <script>
 window.__capErrors = [];
 window.__capLog = function (where, err) {
@@ -96,13 +96,15 @@ try {
 </main>
 
 <nav id="bottomNav" aria-label="ناوبری">
-  <span class="bn-pill" id="bnPill"></span>
-  <button type="button" class="bn" data-tab="home" data-ic="home"><span class="bnl">خانه</span></button>
-  <button type="button" class="bn" data-tab="tx" data-ic="list"><span class="bnl">تراکنش‌ها</span></button>
-  <button id="fab" title="تراکنش جدید" aria-label="افزودن"></button>
-  <button type="button" class="bn" data-tab="report" data-ic="chart"><span class="bnl">گزارش</span></button>
-  <button type="button" class="bn" data-tab="assets" data-ic="wallet"><span class="bnl">ثروت</span></button>
+  <div class="bn-row" id="bnRow">
+    <span class="bn-pill" id="bnPill"></span>
+    <button type="button" class="bn" data-tab="home" data-ic="home"><span class="bnl">خانه</span></button>
+    <button type="button" class="bn" data-tab="tx" data-ic="list"><span class="bnl">تراکنش‌ها</span></button>
+    <button type="button" class="bn" data-tab="report" data-ic="chart"><span class="bnl">گزارش</span></button>
+    <button type="button" class="bn" data-tab="assets" data-ic="wallet"><span class="bnl">ثروت</span></button>
+  </div>
 </nav>
+<button id="fab" title="تراکنش جدید" aria-label="افزودن"></button>
 
 
 <div class="overlay" id="overlay">
@@ -127,6 +129,6 @@ try {
   </div>
 </div>
 
-<script type="module" src="js/boot.js?v=2.38.16"></script>
+<script type="module" src="js/boot.js?v=2.38.17"></script>
 </body>
 </html>
