@@ -671,7 +671,9 @@ paintShellIcons();
     el.onclick = () => {
       window.setScanMenu(false);
       const needForm = !document.getElementById('scanCam'); // ورودی‌ها فقط داخل فرم ساخته می‌شوند
-      if (needForm) openTxForm();
+      // فرمِ کامل باز شود: فرمِ سریع (کیبورد) ورودی‌های scanCam/scanGal ندارد،
+      // پس بدون full هیچ فایل‌پیکی باز نمی‌شد
+      if (needForm) openTxForm(null, { full: true });
       setTimeout(() => startScan(it.kind), needForm ? 250 : 30);
     };
   });
