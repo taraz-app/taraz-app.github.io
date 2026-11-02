@@ -1,5 +1,6 @@
 import { store, toast, uid } from './utils.js';
 import { parseAppDate, jalaliNow } from './jalali.js';
+import { luhnOk } from './cards.js';
 
 const KEY = 'capital_gemini_key';
 // عبوردهندهٔ ورسل: کلیدِ خودِ کاربر فوروارد می‌شود، چیزی ذخیره نمی‌شود.
@@ -499,6 +500,96 @@ export async function readSmsText(text, accountNames) {
   const list = normalizePaper(raw);
   if (!list.length) throw new Error('در متن تراکنشی پیدا نشد');
   return list;
+}
+
+// ── کارتِ بانکی: شمارهٔ ۱۶ رقمی از عکس ─────────────────────────────────
+// ترتیب: اول متن‌یابِ خودِ دستگاه (آفلاین، بدون کلید)، بعد هوش مصنوعی اگر کلید بود،
+// و اگر هیچ‌کدام نبود کاربر ۱۶ رقم را می‌نویسد (بانک از BIN و اعتبار از لون).
+const FA_DIG = '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩';
+function latinDigits(v) {
+  return String(v == null ? '' : v).replace(/[۰-۹٠-٩]/g, (d) => String(FA_DIG.indexOf(d) % 10));
+}
+export function textDetectorOk() {
+  try { return typeof TextDetector !== 'undefined'; } catch (e) { return false; }
+}
+
+// از هر متنی (خروجیِ متن‌یابِ گوشی، پاسخِ مدل، یا حتی متنِ کپی‌شده) شمارهٔ کارت را دربیاور.
+// اول نامزدهایی که لونشان درست است؛ اگر هیچ‌کدام درست نبود، اولین نامزد با ok=false.
+export function cardDigitsFromText(text) {
+  const s = latinDigits(text).replace(/\r?\n/g, ' ');
+  const out = [];
+  let m;
+  // ۱) چهار گروهِ ۴ رقمی با فاصله یا خط تیره (قالبِ معمولِ روی کارت)
+  const grouped = /(?:^|[^\d])(\d{4})[ \-–—_.]+(\d{4})[ \-–—_.]+(\d{4})[ \-–—_.]+(\d{4})(?![\d])/g;
+  while ((m = grouped.exec(s))) out.push(m[1] + m[2] + m[3] + m[4]);
+  // ۲) ۱۶ رقمِ پیوسته
+  const plain = /(?:^|[^\d])(\d{16})(?![\d])/g;
+  while ((m = plain.exec(s))) out.push(m[1]);
+  // ۳) گروه‌های ۴ رقمیِ پراکنده (وقتی OCR جداکننده را خراب کرده)
+  if (!out.length) {
+    const g = s.replace(/[^\d]/g, ' ').split(/ +/).filter((x) => x.length === 4);
+    for (let i = 0; i + 4 <= g.length; i++) out.push(g.slice(i, i + 4).join(''));
+  }
+  const uniq = [...new Set(out)];
+  const ok = uniq.filter((d) => luhnOk(d));
+  return { digits: ok[0] || uniq[0] || '', ok: ok.length > 0, candidates: uniq };
+}
+
+async function imageSource(file) {
+  if (typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(file); } catch (e) {}
+  }
+  // مرورگرهای بدون createImageBitmap: یک <img> از URL موقت
+  return await new Promise((resolve, reject) => {
+    try {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      img.src = url;
+    } catch (e) { reject(e); }
+  });
+}
+
+function cardPrompt() {
+  return `این عکسِ یک کارتِ بانکی است. فقط شمارهٔ ۱۶ رقمیِ حک یا چاپ‌شدهٔ روی کارت را بخوان.
+فقط JSON معتبر برگردان: {"number":"6037 9912 3456 7890","bank":""}
+قاعده‌ها:
+- رقم‌ها را دقیق بخوان؛ جداکردنِ گروه‌های ۴تایی با فاصله یا خط تیره اشکالی ندارد.
+- شمارهٔ حساب، شبا/IBAN، تاریخِ انقضا، CVV2 و شمارهٔ سریال را با شمارهٔ کارت اشتباه نگیر.
+- اگر عکس کارت نبود یا شماره ناخوانا بود، number را رشتهٔ خالی بگذار.
+- bank را فقط اگر نامِ بانک روی کارت خوانا بود بنویس (مثلاً «بانک ملت») وگرنه خالی.`;
+}
+
+// خروجی: {digits, ok, source:'device'|'ai', bank?, text?}
+export async function readCardImage(file) {
+  if (!file) throw new Error('عکسی برای خواندن نیست');
+  // ۱) بدون هوش مصنوعی: متن‌یابِ خودِ گوشی (Shape Detection API)
+  if (textDetectorOk()) {
+    try {
+      const src = await imageSource(file);
+      const det = new TextDetector();
+      const found = (await det.detect(src)) || [];
+      const text = found.map((t) => t.rawValue || t.text || '').join('\n');
+      const hit = cardDigitsFromText(text);
+      if (hit.digits) return { digits: hit.digits, ok: hit.ok, source: 'device', text };
+    } catch (e) { /* متن‌یاب نبود یا خطا داد → مسیرِ بعدی */ }
+  }
+  // ۲) با کلیدِ کاربر: هوش مصنوعی (مسیرِ مستقیم، بعد پل)
+  if (!hasGeminiKey()) {
+    const err = new Error('NO_CARD_READER');
+    err.code = 'NO_CARD_READER';
+    throw err;
+  }
+  const raw = await readWithGemini(file, cardPrompt(), { max: 1600, quality: 0.85, jsonMode: true });
+  const text = String((raw && (raw.number || raw.card || raw.text)) || '');
+  const hit = cardDigitsFromText(text);
+  if (!hit.digits) {
+    const err = new Error('شمارهٔ کارت در عکس پیدا نشد');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+  return { digits: hit.digits, ok: hit.ok, source: 'ai', bank: String((raw && raw.bank) || ''), text };
 }
 
 export async function readInvoiceImage(file) {

@@ -1,6 +1,6 @@
 import { esc, fmt, fmtShort, store, toast, uid, todayISO, haptic, toFa, infoTip, amountWords, pctSign, decSep, calcEval, nowHM, celebrate } from './utils.js';
 import { icon } from './icons.js';
-import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, readSmsText, lastJpegB64 } from './scan.js';
+import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, readSmsText, readCardImage, textDetectorOk, lastJpegB64 } from './scan.js';
 import { parseBankSms, countTxBlocks } from './sms.js';
 import { rememberScan, listScans, loadScan, deleteScan } from './scanhist.js';
 import { cardHtml, cardDigits, luhnOk, bankByBin, bankByName, fmtCardNo, allBanks, allExchanges } from './cards.js';
@@ -1889,6 +1889,10 @@ export function openAccountForm(a, presetBank) {
     </div>
     <div class="field"><label>${tr('شماره کارت (اختیاری)')} ${infoTip(tr('فقط برای تشخیص بانک و پیش‌نمایش کارت. شمارهٔ کامل ذخیره نمی‌شود؛ فقط ۴ رقم آخر و نام بانک می‌ماند.'))}</label>
       <input class="input" id="aCard" inputmode="numeric" dir="ltr" autocomplete="off" maxlength="19" placeholder="${a && a.last4 ? '•••• •••• •••• ' + esc(a.last4) : '6037 9900 0000 0000'}" oninput="acctCardInput(this)">
+      <div class="row" style="gap:8px;margin-top:8px">
+        <button type="button" class="chip" onclick="startCardCapture('cam')">${icon('camera')} ${tr('اسکن از عکس')}</button>
+        <button type="button" class="chip" onclick="startCardCapture('gal')">${icon('image')} ${tr('از گالری')}</button>
+      </div>
       <div class="small" id="aCardHint" style="margin-top:6px;min-height:1em"></div>
       <div id="aCardPreview" style="margin-top:8px">${a && (a.last4 || a.type === 'کارت بانکی') ? cardHtml({ last4: a.last4, name: a.name, bank: a.bank, bankId: a.bankId }) : ''}</div>
     </div>
@@ -2001,6 +2005,136 @@ export function acctCardPreview() {
   if (!d && type !== 'کارت بانکی' && !prevLast4) { pv.innerHTML = ''; return; }
   pv.innerHTML = cardHtml(d ? { number: d, name, bank } : { last4: prevLast4 ? prevLast4[0] : '', name, bank });
 }
+// ── اسکنِ کارتِ بانکی → حسابِ تازه ──────────────────────────────────────
+// بدون هوش مصنوعی هم کار می‌کند: عکس اول با متن‌یابِ خودِ گوشی (آفلاین) خوانده
+// می‌شود، و اگر مرورگر آن را نداشت کاربر ۱۶ رقم را می‌نویسد؛ بانک از ۶ رقمِ اول
+// (BIN) و اعتبارِ شماره با الگوریتمِ لون بررسی می‌شود. هوش مصنوعی فقط وقتی کلید باشد.
+function cardReaderNote() {
+  if (textDetectorOk()) return tr('خواندنِ عکس روی خودِ گوشی و بدون اینترنت انجام می‌شود.');
+  if (hasGeminiKey()) return tr('خواندنِ عکس با کلیدِ هوش مصنوعی انجام می‌شود.');
+  return tr('این مرورگر خواندنِ خودکارِ عکس را ندارد؛ ۱۶ رقم را بنویس تا بانک و ۴ رقمِ آخر خودکار پر شود.');
+}
+
+export function openCardScan(msg, prefill) {
+  const d0 = cardDigits(prefill || '');
+  openModal(`
+    <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
+    <h2>${tr('کارت بانکی')}</h2>
+    <p class="small muted" style="margin:-2px 0 12px">${tr('شمارهٔ ۱۶ رقمی را از عکسِ کارت بخوان یا بنویس؛ بانک را از ۶ رقمِ اول تشخیص می‌دهم و شماره را با الگوریتمِ لون چک می‌کنم.')}</p>
+    <div class="row" style="gap:8px;margin-bottom:12px">
+      <button type="button" class="btn block" style="flex:1" onclick="startCardCapture('cam')">${icon('camera')} ${tr('عکس از کارت')}</button>
+      <button type="button" class="btn block" style="flex:1" onclick="startCardCapture('gal')">${icon('image')} ${tr('از گالری')}</button>
+    </div>
+    <div class="field"><label>${tr('شمارهٔ کارت')}</label>
+      <input class="input" id="cardKp" inputmode="numeric" dir="ltr" autocomplete="off" maxlength="19" placeholder="6037 9900 0000 0000" value="${d0.replace(/(.{4})(?=.)/g, '$1 ')}" oninput="cardKpInput(this)">
+      <div class="small" id="cardKpHint" style="margin-top:6px;min-height:1em;color:var(--muted)">${esc(msg || '')}</div>
+      <div id="cardKpPreview" style="margin-top:8px"></div>
+    </div>
+    <button class="btn primary block" onclick="addAccountFromCard()">${icon('plus')} ${tr('افزودن حساب')}</button>
+    <div class="small muted" style="margin-top:10px">${cardReaderNote()}</div>
+  `);
+  cardKpInput(document.getElementById('cardKp'), true);
+}
+
+// ورودیِ پنهانِ عکسِ کارت در index.html است تا از هر شیتی کار کند
+export function startCardCapture(kind) {
+  const inp = document.getElementById(kind === 'gal' ? 'cardScanGal' : 'cardScanCam');
+  if (!inp) { toast(tr('دوربین در دسترس نیست')); return; }
+  haptic(6);
+  inp.click();
+}
+
+function accountFormOpen() {
+  const ov = document.getElementById('overlay');
+  return !!document.getElementById('aCard') && !!ov && ov.classList.contains('show');
+}
+
+export async function onCardPhoto(inp) {
+  const file = inp && inp.files && inp.files[0];
+  if (inp) inp.value = '';
+  if (!file) return;
+  toast(tr('در حال خواندن کارت…'));
+  let res = null;
+  try {
+    res = await readCardImage(file);
+  } catch (e) {
+    const msg = (e && e.code === 'NO_CARD_READER')
+      ? tr('خواندنِ خودکارِ عکس روی این گوشی نیست؛ شماره را بنویس')
+      : ((e && e.message) || tr('شماره از عکس خوانده نشد'));
+    // داخلِ فرمِ حساب فقط پیام می‌دهیم؛ شیتِ کارت را روی فرم باز نمی‌کنیم
+    if (accountFormOpen()) { toast(msg); return; }
+    openCardScan(msg, (document.getElementById('cardKp') || {}).value);
+    return;
+  }
+  applyCardDigits(res.digits, { source: res.source, bank: res.bank, ok: res.ok });
+}
+
+function fillCardField(inp, digits) {
+  const d = cardDigits(digits);
+  inp.value = d.replace(/(.{4})(?=.)/g, '$1 ');
+  inp.dataset.auto = '1';
+  acctCardInput(inp);
+  const ty = document.getElementById('aType');
+  if (ty && d.length === 16) ty.value = ACCT_TYPES[0];
+  const nm = document.getElementById('aName');
+  const bankIn = document.getElementById('aBank');
+  if (nm && !nm.value.trim() && bankIn && bankIn.value.trim()) {
+    nm.value = tr('کارت') + ' ' + bankIn.value.trim().replace(/^(بانک|مؤسسه)\s+/, '');
+    nm.dispatchEvent(new Event('input'));
+  }
+  acctCardPreview();
+}
+
+// شمارهٔ خوانده‌شده را یا در فرمِ بازِ حساب می‌گذارد یا فرمِ حسابِ تازه می‌سازد
+export function applyCardDigits(digits, info) {
+  const d = cardDigits(digits);
+  if (!d) { toast(tr('شماره‌ای پیدا نشد')); return; }
+  const ok = d.length === 16 && luhnOk(d);
+  const msg = !ok
+    ? tr('شماره پیدا شد ولی معتبر نیست؛ رقم‌ها را چک کن')
+    : info && info.source === 'ai'
+      ? tr('شماره از عکس خوانده شد — چک کن و ذخیره کن')
+      : info && info.source === 'device'
+        ? tr('شمارهٔ کارت خوانده شد — چک کن و ذخیره کن')
+        : tr('فرمِ حساب پر شد — نام و موجودی را چک کن و ذخیره کن');
+  if (accountFormOpen()) {
+    fillCardField(document.getElementById('aCard'), d);
+    toast(msg);
+    return;
+  }
+  const b = bankByBin(d);
+  openAccountForm(null, (info && info.bank) || (b ? b.name : ''));
+  const inp = document.getElementById('aCard');
+  if (inp) fillCardField(inp, d);
+  const hint = document.getElementById('aCardHint');
+  if (hint && !ok) { hint.textContent = msg; hint.style.color = 'var(--red)'; }
+  toast(msg);
+}
+
+export function cardKpInput(inp, keepMsg) {
+  if (!inp) return;
+  const d = cardDigits(inp.value);
+  inp.value = d.replace(/(.{4})(?=.)/g, '$1 ');
+  const hint = document.getElementById('cardKpHint');
+  const b = bankByBin(d);
+  if (hint && !keepMsg) {
+    if (d.length === 16 && !luhnOk(d)) { hint.textContent = tr('این شماره معتبر به نظر نمی‌رسد؛ یک رقمش را چک کن.'); hint.style.color = 'var(--red)'; }
+    else if (d.length === 16) { hint.textContent = '✓ ' + (b ? b.name : tr('بانک را نمی‌شناسم؛ در فرمِ بعدی خودت بنویس')); hint.style.color = 'var(--green)'; }
+    else if (d.length >= 6 && !b) { hint.textContent = tr('بانک این شماره را نمی‌شناسم؛ نام بانک را خودت بنویس.'); hint.style.color = 'var(--muted)'; }
+    else if (d.length >= 6) { hint.textContent = b.name; hint.style.color = 'var(--muted)'; }
+    else hint.textContent = '';
+  }
+  const pv = document.getElementById('cardKpPreview');
+  if (pv) pv.innerHTML = d ? cardHtml({ number: d }) : '';
+}
+
+export function addAccountFromCard() {
+  const d = cardDigits(((document.getElementById('cardKp') || {}).value) || '');
+  if (d.length !== 16) { toast(tr('۱۶ رقمِ شمارهٔ کارت را بنویس')); haptic(30); return; }
+  if (!luhnOk(d)) { toast(tr('این شماره معتبر به نظر نمی‌رسد؛ یک رقمش را چک کن.')); haptic(30); return; }
+  applyCardDigits(d, { source: 'typed' });
+}
+
 export function saveAccount() {
   const name = document.getElementById('aName').value.trim();
   if (!name) {

@@ -179,6 +179,12 @@ import {
   pasteScanText,
   scanTxtHint,
   scanTxtClear,
+  openCardScan,
+  startCardCapture,
+  onCardPhoto,
+  cardKpInput,
+  addAccountFromCard,
+  applyCardDigits,
   setPaperType,
   setPaperCat,
   removePaperRow,
@@ -461,6 +467,12 @@ Object.assign(window, {
   pasteScanText,
   scanTxtHint,
   scanTxtClear,
+  openCardScan,
+  startCardCapture,
+  onCardPhoto,
+  cardKpInput,
+  addAccountFromCard,
+  applyCardDigits,
   setPaperType,
   setPaperCat,
   removePaperRow,
@@ -678,7 +690,7 @@ paintShellIcons();
   const sheet = document.getElementById('scanSheet');
   const scrim = document.getElementById('fabScrim');
   if (!sc || !sheet || !scrim) return;
-  sc.innerHTML = icon('camera');
+  sc.innerHTML = icon('scan');
   window.setScanMenu = function (open) {
     sheet.classList.toggle('show', open);
     if (open) {
@@ -688,7 +700,7 @@ paintShellIcons();
     scrim.hidden = !open;
   };
   sc.onclick = () => window.setScanMenu(!sheet.classList.contains('show'));
-  const items = { scCam: { ic: 'camera', kind: 'cam' }, scGal: { ic: 'image', kind: 'gal' }, scTxt: { ic: 'doc', kind: 'txt' } };
+  const items = { scCam: { ic: 'camera', kind: 'cam' }, scGal: { ic: 'image', kind: 'gal' }, scTxt: { ic: 'doc', kind: 'txt' }, scCard: { ic: 'card', kind: 'card' } };
   Object.entries(items).forEach(([id, it]) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -698,6 +710,8 @@ paintShellIcons();
       window.setScanMenu(false);
       // متنِ پیامک کلیدِ هوش مصنوعی لازم ندارد: پارسرِ محلی هم هست
       if (it.kind === 'txt') { openScanText(); return; }
+      // کارتِ بانکی هم بدون کلید کار می‌کند: متن‌یابِ گوشی یا تایپِ ۱۶ رقم + BIN/لون
+      if (it.kind === 'card') { openCardScan(); return; }
       if (!hasGeminiKey()) { toast(tr('اول در تنظیمات کلید عکس را بگذار')); return; }
       // عکس اول گرفته و خوانده می‌شود؛ فرمِ مرتبط را onScanPhoto بعد از خواندن باز می‌کند.
       // دیگر فرم را از قبل باز نمی‌کنیم: closeModal شیت را خالی نمی‌کند و حدسِ

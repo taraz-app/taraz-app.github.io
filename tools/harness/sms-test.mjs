@@ -63,7 +63,7 @@ check('پاکت حدس زده می‌شود', pasted.every((r) => r.type === 'in
 
 // ── ۲. ورودی‌های UI ─────────────────────────────────────────────────────
 check('دکمهٔ «متن پیامک» در انتخابگرِ اسکن هست', !!$('scTxt') && /متن پیامک/.test($('scTxt').textContent));
-check('انتخابگرِ اسکن سه‌ستونه است', /fs-grid cols3/.test(doc.querySelector('#scanSheet').innerHTML));
+check('انتخابگرِ اسکن چهارخانه است (دوربین، گالری، متن، کارت)', /class="fs-grid"/.test(doc.querySelector('#scanSheet').innerHTML) && doc.querySelectorAll('#scanSheet .fs-it').length === 4);
 $('scTxt').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 await app.wait(40);
 check('با ضربه روی آن، شیتِ متن باز می‌شود', app.overlayOpen() && !!$('scanTxt'));
