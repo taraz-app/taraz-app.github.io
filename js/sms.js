@@ -26,6 +26,8 @@ function normText(raw) {
   let s = toLatinDigits(raw);
   s = s.replace(/\u200c/g, ' ').replace(/[ي]/g, 'ی').replace(/[ك]/g, 'ک').replace(/[ة]/g, 'ه');
   s = s.replace(/[٬]/g, ',').replace(/[؛]/g, ';').replace(/[،]/g, ',');
+  // منهاهای یونیکد (− U+2212 و ـ) و بعلاوهٔ تمام‌عرض: بعضی بانک‌ها این‌ها را می‌فرستند
+  s = s.replace(/[\u2212\uFF0D]/g, '-').replace(/[\uFF0B]/g, '+');
   // «*بانک تجارت*» → «بانک تجارت» (فقط وقتی کلِ خط ستاره دارد؛ ماسکِ کارت دست نمی‌خورد)
   s = s.replace(/^[ \t]*\*+([^*\n]+?)\*+[ \t]*$/gm, '$1');
   s = s.replace(/[ \t]+/g, ' ');
@@ -58,60 +60,96 @@ export function isBankHeader(line) {
     const short = b.name.replace(/^(بانک|مؤسسه)\s+/, '');
     const forms = [b.name, short, b.name + ' ایران', short + ' ایران'];
     if (forms.some((f) => t === f || t === f.replace(/\s+/g, ''))) return true;
-    if (t.includes(b.name) && !GENERIC_BANK_WORD.test(t.replace(b.name, ''))) return true;
+    // سربرگ یعنی کلِ خط فقط نامِ بانک باشد (با «ایران» یا دونقطه)؛ «برداشت ناموفق - بانک ملی» سربرگ نیست
+    const rest = t.replace(b.name, '').replace(/[\s:：.\-–—()]/g, '');
+    if (rest === '' || rest === 'ایران') return true;
+    // «بانک رسالت» = «بانک قرض‌الحسنه رسالت»: واژهٔ آخرِ نام با پیشوندِ بانک
+    const words = short.split(/\s+/).filter((w) => w.length >= 3);
+    const tail = words[words.length - 1] || '';
+    if (tail && tail !== short && new RegExp('^(?:بانک|مؤسسه)\\s+' + tail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$').test(t)) return true;
   }
   return false;
 }
 
+// خطی که تراکنشِ تازه‌ای را شروع می‌کند (نه خطِ اطلاعاتیِ همان پیامک)
+function startsTxLine(l) {
+  const t = String(l || '').trim();
+  if (/^[+-]\s*[\d۰-۹٠-٩٬,]/.test(t)) return true;
+  if (/[\d,]{4,}[+-]\s*(?![\d*])/.test(t) && /(برداشت|واریز|انتقال|خرید|پرداخت)/.test(t)) return true;
+  if (!/\d/.test(t)) return false;
+  if (/^مبلغ\s*[:：]\s*[+-]?\s*[\d۰-۹٠-٩٬,]/.test(t)) return true;
+  return /^(برداشت|واریز|انتقال|خرید|پرداخت|کسر|افزایش|شارژ|قبض|کارت\s*به\s*کارت)(?=[\s:：]|$)/.test(t);
+}
+
+function lineHasAmount(l) {
+  const t = String(l || '');
+  return /\d/.test(t) && (CUR_RE.test(t) || /[\d,]{4,}\s*[+-]\s*(?![\d*])/.test(t) || /^[+-]\s*[\d۰-۹٬,]/.test(t.trim()));
+}
+
+// خط‌های «اطلاعاتی» همان پیامک: هیچ‌وقت پیامکِ تازه شروع نمی‌کنند
+// «مانده/موجودی» همیشه اطلاعاتی است؛ بقیهٔ کلیدها فقط وقتی که دونقطه داشته باشند
+// («حساب: 02000» اطلاعاتی است ولی «حساب شما به مبلغ … بستانکار شد» یک تراکنشِ کامل است)
+const META_LINE = /^(?:از|به|طرف|در)?\s*(?:مانده|موجودی|balance)|^(?:از|به|طرف|در)?\s*(حساب|کارت|شماره|شبا|سپرده|پایانه|پذیرنده|پیگیری|شناسه|کد|تاریخ|ساعت|زمان|طریق|نوع|شرح|بابت)\S*(?:\s+\S+)?\s*[:：]/i;
+function isMetaLine(l) {
+  const t = String(l || '').trim();
+  if (!t) return true;
+  if (!/\d/.test(t)) return true;                                  // نامِ بانک، «مشتری گرامی»، «کارت به کارت»
+  if (/^\d{4}[-/.]\d{1,2}([-/.]\d{1,2})?/.test(t)) return true;     // تاریخِ کامل
+  if (/^\d{1,2}:\d{2}/.test(t)) return true;                        // ساعت
+  if (/^\d{2,4}-\d{1,2}:\d{2}/.test(t)) return true;                // مهرِ کوتاهِ ملی (0810-21:55)
+  return META_LINE.test(t);
+}
+
 export function splitMessages(text) {
   const raw = String(text || '');
-  const lines = raw.split(/\r?\n/).map((l) => l.trim());
-
-  // اگر دو پیامک یا بیشتر با نامِ بانک شروع شده باشند (ملی، تجارت و …)، همان سربرگ مرزِ قطعی است؛
-  // بعضی پیامک‌ها بینِ هر خط یک خطِ خالی دارند و برشِ خطِ خالی هر خط را یک پیامکِ جدا می‌کند.
-  const heads = [];
-  lines.forEach((l, i) => { if (l && isBankHeader(l)) heads.push(i); });
-  if (heads.length >= 2) {
-    const heads_msgs = [];
-    const pre = lines.slice(0, heads[0]).filter(Boolean).join('\n').trim();
-    if (pre) heads_msgs.push(pre);
-    for (let k = 0; k < heads.length; k++) {
-      const end = k + 1 < heads.length ? heads[k + 1] : lines.length;
-      const body = lines.slice(heads[k], end).filter(Boolean).join('\n').trim();
-      if (body) heads_msgs.push(body);
-    }
-    const out = [];
-    for (const m of heads_msgs) for (const part of (isStructured(m) ? [normText(m)] : splitRunOn(normText(m)))) out.push(part);
-    return out.filter(Boolean);
+  const lines = raw.split(/\r?\n/);
+  const msgs = [];
+  let cur = [];
+  let hasAmt = false;
+  let hasSkip = false;
+  let pendingBlank = false;
+  const flush = () => {
+    if (cur.length) { msgs.push(cur.join('\n')); cur = []; hasAmt = false; hasSkip = false; }
+  };
+  for (const rawLine of lines) {
+    const l = rawLine.trim();
+    if (!l) { if (cur.length) pendingBlank = true; continue; }
+    // آزمون‌ها روی متنِ نرمال (رقمِ لاتین)؛ وگرنه «۷٬۷۰۰٬۰۰۰ ریال» بی‌عدد به نظر می‌رسد
+    const t = normText(l);
+    // نامِ بانک روی خطِ خودش = سربرگِ پیامکِ تازه (ملی، تجارت و بیشتر بانک‌ها)
+    if (isBankHeader(l)) { flush(); cur.push(l); pendingBlank = false; continue; }
+    // عنوانِ بی‌رقمِ پیامکِ تازه («کارت به کارت») بعد از پیامکی که مبلغش را گرفته
+    const bareTitle = !/\d/.test(t) && !/[:：]/.test(t) && BARE_NOTE_RE.test(t);
+    // وقتی پیامکِ جاری مبلغش را گرفته، خطِ غیراطلاعاتیِ بعدی پیامکِ تازه است
+    // پیامکِ جاری «تمام» است اگر مبلغش را گرفته باشد یا کلاً پیامِ ردشدنی باشد (رمز پویا/ناموفق)
+    if (cur.length && (hasAmt || hasSkip) && (!isMetaLine(t) || bareTitle) && (pendingBlank || bareTitle || startsTxLine(t) || lineHasAmount(t))) flush();
+    cur.push(l);
+    if (lineHasAmount(t)) hasAmt = true;
+    if (SKIP_RE.test(t)) hasSkip = true;
+    pendingBlank = false;
   }
-
-  // جداکننده فقط وقتی خطِ کامل باشد: «****» در کارتِ ماسک‌شده نباید پیامک را نصف کند
-  const blocks = raw
-    .split(/\n{2,}|\n\s*[-*=_]{3,}\s*\n/)
-    .map((b) => b.trim())
-    .filter(Boolean);
-  let msgs = blocks.length > 1 ? blocks : lines.filter(Boolean);
-  if (msgs.length === 1) msgs = splitRunOn(msgs[0]);
-  // خطِ بی‌عدد، ادامهٔ پیامکِ قبلی است (شکستنِ متن در بعضی پیام‌رسان‌ها)
-  const merged = [];
-  for (const m of msgs) {
-    const prev = merged[merged.length - 1];
-    // خطِ بی‌عدد ادامهٔ پیامکِ قبلی است، اما فقط اگر قبلی هنوز واحدِ پول/مبلغ نداشته باشد
-    if (prev && !/\d/.test(m) && !CUR_RE.test(prev)) merged[merged.length - 1] = prev + ' ' + m;
-    else merged.push(m);
-  }
+  flush();
+  // پیامکِ تک‌خطیِ به‌هم‌چسبیده هم از روی فعلِ پولی جدا می‌شود
   const out = [];
-  for (const m of merged) for (const part of (isStructured(m) ? [normText(m)] : splitRunOn(normText(m)))) out.push(part);
+  for (const m of msgs) for (const part of (isStructured(m) ? [normText(m)] : splitRunOn(normText(m)))) out.push(part);
   return out.filter(Boolean);
 }
 
 // حساب/کارت: ۴ رقم آخر + نام بانک (همان چیزی که matchAccountId در forms.js می‌فهمد)
+// نام‌های کوتاهی که در پیامک به‌جای نامِ کاملِ بانک می‌آیند
+const ALIAS = {
+  بلوبانک: /(?:^|[\s—\-:،])بلو(?:\s|کارت|$)/,
+};
+
 export function findAccount(m) {
   let last4 = '';
-  // مهرِ زمانیِ کوتاهِ بانک ملی («0810-21:55» = ماه/روز-ساعت) شمارهٔ کارت نیست
-  const probe = String(m || '').replace(/\b\d{4}-\d{1,2}:\d{2}\b/g, ' ');
+  // تاریخ و ساعت شمارهٔ کارت نیستند: مهرِ ملی «0810-21:55»، تاریخِ کامل و ساعت
+  const probe = String(m || '')
+    .replace(/\b\d{4}-\d{1,2}:\d{2}\b/g, ' ')
+    .replace(/\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?:\s+\d{1,2}:\d{2})?/g, ' ')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, ' ');
   // اول کارتِ ماسک‌شده («6395-****-****-1234»)؛ «از حساب 6395-…» را نباید ۶۳۹۵ گرفت
-  let mm = probe.match(/\b\d{4}(?:[-\s]+\d{2,6}|[-\s]*\*{2,6}){1,6}\b|(?:^|[^\d*])\*{2,6}[-\s]*\d{4}(?!\d)/);
+  let mm = probe.match(/\b\d{4}(?:[- \t]+\d{2,6}|[- \t]*\*{2,6}){1,6}\b|(?:^|[^\d*])\*{2,6}[- \t]*\d{4}(?!\d)/);
   if (mm) {
     const d = mm[0].replace(/\D/g, '');
     if (d.length >= 4) last4 = d.slice(-4);
@@ -125,8 +163,15 @@ export function findAccount(m) {
   for (const b of allBanks()) {
     const short = b.name.replace(/^(بانک|مؤسسه)\s+/, '');
     // «رفاه» در «فروشگاه رفاه» بانک رفاه نیست: یا نامِ کامل، یا «بانک/نزدِ + نام»
-    const bankish = new RegExp('(?:بانک|مؤسسه|نزد|by)\\s+' + short.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const bankish = new RegExp('(?:بانک|مؤسسه|نزد|by)\\s+' + esc(short));
     if (m.includes(b.name) || bankish.test(m)) { name = b.name; break; }
+    // برندِ کوتاهِ نئوبانک‌ها: پیامکِ بلوبانک می‌نویسد «بلو کارت»
+    if (ALIAS[b.name] && ALIAS[b.name].test(m)) { name = b.name; break; }
+    // «بانک رسالت» باید به «بانک قرض‌الحسنه رسالت» بخورد: واژهٔ آخرِ نام با پیشوندِ بانک
+    const words = short.split(/\s+/).filter((w) => w.length >= 3);
+    const tail = words[words.length - 1] || '';
+    if (tail && tail !== short && new RegExp('(?:بانک|مؤسسه|نزد)\\s+' + esc(tail) + '(?![\\u0600-\\u06FF])').test(m)) { name = b.name; break; }
   }
   const parts = [];
   if (name) parts.push(name.replace(/^بانک\s+/, ''));
@@ -150,7 +195,7 @@ let CHANNEL_HINT = '';
 
 function extractNote(m) {
   const pats = [
-    /خرید\s+از\s*[:\-]?\s*([^;,:\d]{2,40})/,
+    /خرید\s+(?:از|در|اینترنتی\s+از)\s*[:\-]?\s*([^;,:\d]{2,40})/,
     [/پرداخت\s+قبض\s*[:\-]?\s*([^;,:\d]{2,32})/, 'قبض'],
     /پرداخت\s+(?:به|بابت)\s*[:\-]?\s*([^;,:\d]{2,32})/,
     /انتقال\s+(?:وجه\s+)?(?:به|از)\s*[:\-]?\s*([^;,:\d]{2,32})/,
@@ -211,7 +256,7 @@ function extractAmount(m) {
   s = s.replace(/\b1[3-9]\d{2}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/g, ' ');
   s = s.replace(/\b20\d{2}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/g, ' ');
   s = s.replace(/\b\d{1,2}:\d{2}\b/g, ' ');
-  s = s.replace(/\b\d{4}(?:[-\s]+\d{2,6}|[-\s]*\*{2,6}){1,6}\b|(?:^|[^\d*])\*{2,6}[-\s]*\d{4}(?!\d)/g, ' ');
+  s = s.replace(/\b\d{4}(?:[- \t]+\d{2,6}|[- \t]*\*{2,6}){1,6}\b|(?:^|[^\d*])\*{2,6}[- \t]*\d{4}(?!\d)/g, ' ');
 
   const nums = [];
   const re = /(\d[\d,]*(?:\.\d+)?)/g;
@@ -296,16 +341,25 @@ function unglue(s) {
 
 const KV_LINE = /^([^:\n]{1,30})\s*[:：]\s*(.*)$/;
 const KEY_BAL = /(مانده|موجودی|باقی\s*مانده|قابل\s*برداشت|balance)/;
-const KEY_ACC = /^\s*(حساب|کارت|شماره|شبا|account)/;
-const KEY_CH = /(از\s*طریق|طریق|کانال|درگاه|دستگاه|پایانه|ترمینال|پذیرنده|شعبه|نوع\s*عملیات)/;
+const KEY_ACC = /^\s*(حساب|کارت|شماره|شبا|سپرده|پس\s*انداز|account)/;
+const KEY_CH = /(از\s*طریق|طریق|کانال|درگاه|دستگاه|پایانه|ترمینال|پذیرنده|شعبه)/;
+const KEY_AMT = /^\s*(مبلغ|amount)/;
+const KEY_KIND = /^\s*(نوع|نوع\s*عملیات|عملیات)/;
+const KEY_DESC = /^\s*(شرح|بابت|توضیحات|شرح\s*تراکنش|شرح\s*عملیات)/;
+const BARE_NOTE_RE = /(کارت\s*به\s*کارت|انتقال|برداشت|واریز|خرید|پرداخت|شارژ|قبض|حقوق|سود|قسط)/;
 const KEY_TX = /(برداشت|واریز|انتقال|خرید|پرداخت|شارژ|قبض|کسر|افزایش|دریافت|برگشت|سود|حقوق|یارانه|کارمزد|جریمه|قسط|بستانکار|مدیون)/;
 const KEY_IN = /(واریز|افزایش|دریافت|برگشت|سود|حقوق|یارانه|بستانکار)/;
 
-// پیامکِ ساختاریافته: دو خطِ «کلید: مقدار» یا بیشتر
+// کلیدهایی که واقعاً در پیامکِ بانک می‌آیند (برای شمارشِ «کلید: مقدار»ها)
+const KEY_ANY = /(?:^|[\s\n])(برداشت|واریز|انتقال|خرید|پرداخت|مبلغ|مانده|موجودی|حساب|کارت|شماره|شبا|سپرده|از طریق|طریق|تاریخ|ساعت|نوع)\s*[:：]/g;
+
+// پیامکِ ساختاریافته: دو «کلید: مقدار» یا بیشتر (حتی در یک خط)
 export function isStructured(m) {
   let n = 0;
   for (const l of String(m || '').split('\n')) if (KV_LINE.test(l.trim())) n++;
-  return n >= 2;
+  if (n >= 2) return true;
+  const hits = String(m || '').match(KEY_ANY);
+  return !!hits && hits.length >= 2;
 }
 
 function parseValueAmount(val) {
@@ -320,9 +374,12 @@ function parseValueAmount(val) {
 
 // علامتِ چسبیده به مبلغ: «2,362,500-» یعنی برداشت، «30,000,000+» یعنی واریز
 function amountSign(m) {
-  const t = String(m || '');
+  const t = String(m || '').trim();
   if (/[\d,]\+(?!\d)/.test(t)) return '+';
   if (/[\d,]-(?![\d*\s])/.test(t)) return '-';
+  // بلوبانک و چند بانک دیگر علامت را اولِ پیامک می‌گذارند: «+۴٬۵۰۰٬۰۲۸ ریال»
+  const lead = t.match(/^(?:[^\d\n]{0,12})?([+-])[ \t]*[\d۰-۹٠-٩٬,]/m);
+  if (lead) return lead[1];
   return '';
 }
 
@@ -345,6 +402,17 @@ function parseStructured(m) {
       if (d && !date) date = d;
       const t = extractTime(l);
       if (t && !time) time = t;
+      // خطِ بی‌رقمِ اولِ پیامک گاهی خودِ شرح است: «کارت به کارت»
+      if (!date && !time && !noteKey && !/\d/.test(l) && BARE_NOTE_RE.test(l)) { noteKey = unglue(cleanChannel(l)); continue; }
+      // خطِ «مبلغِ تنها»: «-500,000 ریال» یا «+4,500,028 ریال» (بلوبانک و بانک دی)
+      if (!amount && /^[+-]?\s*[\d۰-۹٠-٩][\d۰-۹٠-٩٬,]*(\s*(ریال|تومان|تومن))?\s*$/.test(l)) {
+        const p = parseValueAmount(l);
+        if (p) {
+          amount = p.amount;
+          const sg = amountSign(l);
+          type = sg === '+' ? 'in' : sg === '-' ? 'out' : type;
+        }
+      }
       continue;
     }
     const key = normText(mm[1]).replace(/\s+/g, ' ').trim();
@@ -355,8 +423,33 @@ function parseStructured(m) {
       if (d.length >= 4) acctDigits = d.slice(-4);
       continue;
     }
-    if (/تاریخ/.test(key)) { const d = extractDate(val); if (d && !date) date = d; continue; }
+    if (/تاریخ/.test(key)) { const d = extractDate(val); if (d && !date) date = d; const t2 = extractTime(val); if (t2 && !time) time = t2; continue; }
     if (/(ساعت|زمان)/.test(key)) { const t = extractTime(val); if (t && !time) time = t; continue; }
+    if (KEY_DESC.test(key)) {
+      const v = cleanChannel(val);
+      if (v && !noteKey) noteKey = v;
+      else if (v && !channel) channel = v;
+      continue;
+    }
+    if (KEY_KIND.test(key)) {
+      // «نوع عملیات: برداشت» → جهت و یادداشت؛ وگرنه همان کانال است
+      if (KEY_TX.test(val)) {
+        if (!noteKey) noteKey = unglue(cleanChannel(val) || val);
+        if (!type) type = KEY_IN.test(val) ? 'in' : 'out';
+      } else if (!channel) channel = cleanChannel(val);
+      continue;
+    }
+    if (KEY_AMT.test(key)) {
+      if (!amount) {
+        const p = parseValueAmount(val);
+        if (p) {
+          amount = p.amount;
+          const sign = amountSign(val);
+          if (sign) type = sign === '+' ? 'in' : 'out';
+        }
+      }
+      continue;
+    }
     if (KEY_CH.test(key)) { if (!channel) channel = cleanChannel(val); continue; }
     if (KEY_TX.test(key) && !SKIP_RE.test(key)) {
       if (amount) continue;                                 // اولین خطِ پولی همان تراکنش است
@@ -365,12 +458,14 @@ function parseStructured(m) {
       amount = p.amount;
       const sign = amountSign(val);
       type = sign === '+' ? 'in' : sign === '-' ? 'out' : KEY_IN.test(key) ? 'in' : 'out';
-      noteKey = unglue(key);
+      // «واریز به حساب: …» یا «برداشت از کارت: …» → همان «واریز»/«برداشت»
+      noteKey = unglue(key).replace(/\s+(به|از)\s+(حساب|کارت|سپرده|شما)\s*$/, '');
       continue;
     }
     // «کدشعبه: 3001» و مانند آن: نه مبلغ است نه شرح
   }
   if (!(amount > 0)) return null;
+  if (!type) type = amountSign(m) === '+' ? 'in' : KEY_IN.test(noteKey) ? 'in' : 'out';
   const acct = findAccount(m);
   const last4 = acctDigits || acct.last4;
   const bank = acct.name ? acct.name.replace(/^بانک\s+/, '') : '';
@@ -420,6 +515,8 @@ export function parseOneSms(msg) {
   // پیامک‌های «کلید: مقدار» بانک‌ها دقیق‌تر با پارسرِ ساختاریافته خوانده می‌شوند
   const structured = isStructured(m) ? parseStructured(m) : null;
   if (structured) return structured;
+  // نه کلمهٔ پولی دارد نه علامتِ +/- → اطلاعیه است، نه تراکنش (مانده/شمارهٔ حساب و…)
+  if (!KEY_TX.test(m) && !OUT_RE.test(m) && !IN_RE.test(m) && !amountSign(m) && !/\s(مبلغ|amount)\s*[:：]/.test(' ' + m)) return null;
   const amt = extractAmount(m);
   if (!amt || !(amt.amount > 0)) return null;
   const sign = amountSign(m);
@@ -451,7 +548,8 @@ export function parseBankSms(text) {
     const row = parseOneSms(msg);
     if (!row) continue;
     // پیامکِ تکراریِ یک تراکنش (بعضی بانک‌ها دو بار می‌فرستند)
-    const dup = out.some((r) => r.type === row.type && r.amount === row.amount && r.date === row.date && r.note === row.note);
+    // تکراری یعنی همان تراکنش با همان ساعت و حساب (دو خریدِ هم‌مبلغ در یک روز جدا هستند)
+    const dup = out.some((r) => r.type === row.type && r.amount === row.amount && r.date === row.date && (r.time || '') === (row.time || '') && r.note === row.note && (r.account || '') === (row.account || ''));
     if (dup) continue;
     out.push(row);
   }

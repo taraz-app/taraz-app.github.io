@@ -24,7 +24,7 @@ It is designed around the **envelope (“pocket”) method** — every month’s
 - **Transfers** between accounts, including cross‑currency transfers with a per‑transfer rate.
 - Swipe a row to delete or edit, long‑press to repeat; “what if you hadn’t spent this?” reflection note for Waste items.
 - **Photo import** (optional, uses your own Google Gemini API key): photograph a handwritten list or a receipt and get transactions/invoice lines pre‑filled for review.
-- **Bank SMS import**: paste several bank SMS messages (or pull them from the clipboard) and each one becomes an editable row in the same review screen the photo flow uses. Structured Iranian bank SMS (Melli, Tejarat, Mellat, Parsian, BluBank — `برداشت:`/`حساب:`/`مانده:` lines, `+`/`-` amount signs, `0810-21:55` stamps) are read by the built‑in parser: exact, instant, offline. Free‑form text goes to the AI with a Gemini key, and falls back to the local parser if the call fails.
+- **Bank SMS import**: paste several bank SMS messages (or pull them from the clipboard) and each one becomes an editable row in the same review screen the photo flow uses. Structured Iranian bank SMS (Melli, Tejarat, Mellat, Sepah, Pasargad, Saman, Saderat, Parsian, Refah, Keshavarzi, Shahr, Ayandeh, Post Bank, Resalat, Day, Maskan and BluBank — `برداشت:`/`حساب:`/`سپرده:`/`مانده:`/`نوع عملیات:` lines, `+`/`-`/`−` amount signs, `0810-21:55` stamps) are read by the built‑in parser: exact, instant, offline. Free‑form text goes to the AI with a Gemini key, and falls back to the local parser if the call fails.
 - Per‑account ledger with running balance; per‑pocket ledger per month.
 
 ### Report
@@ -110,7 +110,7 @@ All amounts are stored in the account’s own currency; the base currency is use
 
 ## Version
 
-Current: `2.38.31` (root) / `2.38.31-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+Current: `2.38.32` (root) / `2.38.32-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
 
 ## License
 
