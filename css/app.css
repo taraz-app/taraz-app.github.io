@@ -477,6 +477,9 @@ body.locked{overflow:hidden}
 .inv-line{background:var(--card2);border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-2)}
 
 /* ═══ تنظیمات ═══ */
+/* تیترِ گروه در تنظیمات: «برنامه / داده‌ها / پول / ابزار» */
+.sttl{font-size:var(--fs-xs);font-weight:700;color:var(--muted);margin:14px 4px 0}
+.sttl+.sgroup{margin-top:6px}
 .sgroup{background:var(--card);border:1px solid var(--border-soft);border-radius:var(--r-lg);overflow:hidden;margin:var(--sp-3) 0;box-shadow:var(--shadow-1)}
 .sgroup .hint{margin:0;padding:var(--sp-3) var(--sp-4);border-radius:0;border-bottom:1px solid var(--border-soft);background:transparent}
 .sgroup .hint:last-child{border-bottom:0}

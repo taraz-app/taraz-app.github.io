@@ -911,19 +911,34 @@ function settingsHeader(title, back) {
     : `<button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button><h2>${title}</h2>`;
 }
 
+// تیترِ کوچکِ گروه — همان کاری که در تلگرام/iOS «بخش» را از ردیف‌ها جدا می‌کند
+function settingsSection(label) {
+  return `<div class="sttl">${label}</div>`;
+}
+
+// منوی اصلی: ۷ ردیف در ۴ گروهِ تیتردار (قبلاً ۱۱ ردیف بی‌تیتر بود).
+// جزئیات هر گروه داخل زیرصفحهٔ خودش است؛ سبک ردیف‌ها همان تلگرامی مانده.
 export function openSettings() {
   const enc = sec.isEncrypted();
   const bioOn = hasBiometric();
   const u = googleUserFromStore();
   const theme = THEMES.find((t) => t.id === currentTheme()) || THEMES[0];
   const gemini = !!store.get('capital_gemini_key');
+  const digits = digitsPref() === 'auto' ? (lang() === 'fa' ? '۱۲۳' : '123') : digitsPref() === 'fa' ? '۱۲۳' : '123';
   openModal(`
     ${settingsHeader(tr('تنظیمات'))}
+    ${settingsSection(tr('برنامه'))}
     <div class="sgroup">
-      ${settingsRow('palette', '#8b5cf6', tr('ظاهر'), tr('تم و رنگ برنامه'), 'openSettingsAppearance()', theme.name)}
-      ${settingsRow('globe', '#0891b2', t('set.language'), t('set.languageSub'), 'openSettingsLanguage()', (LANGS.find((l) => l.id === lang()) || {}).name + ' · ' + (digitsPref() === 'auto' ? (lang() === 'fa' ? '۱۲۳' : '123') : digitsPref() === 'fa' ? '۱۲۳' : '123'))}
-      ${settingsRow('calendar', '#0ea5e9', t('set.book'), t('set.bookSub'), 'openSettingsBook()', bookCal() === 'gregorian' ? t('set.cal.greg') : t('set.cal.jalali'))}
+      ${settingsRow(
+        'palette',
+        '#8b5cf6',
+        tr('ظاهر، زبان و تقویم'),
+        tr('تم و رنگ · زبان · تقویم دفتر'),
+        'openSettingsDisplay()',
+        theme.name + ' · ' + digits
+      )}
     </div>
+    ${settingsSection(tr('داده‌ها'))}
     <div class="sgroup">
       ${settingsRow(
         'shield',
@@ -935,42 +950,109 @@ export function openSettings() {
       ${settingsRow(
         'cloud',
         '#3d8bfd',
-        tr('گوگل درایو'),
-        u ? esc(u.email || u.name || tr('متصل')) : tr('همگام‌سازی بین دستگاه‌ها'),
-        'openSettingsGoogle()',
-        u ? '' : tr('خاموش')
+        tr('همگام‌سازی و پشتیبان'),
+        u ? esc(u.email || u.name || tr('متصل')) : tr('گوگل درایو · فایل روی گوشی'),
+        'openSettingsSync()',
+        u ? esc(syncStatusText()) : tr('خاموش')
       )}
     </div>
+    ${settingsSection(tr('پول'))}
     <div class="sgroup">
-      ${settingsRow('target', '#16a34a', t('hl.title'), t('hl.set.fun'), 'openHealthSettings()')}
-      ${settingsRow('chart', '#a78bfa', tr('الگوی پاکت‌ها'), profileName(profileFor(curMonthKey()).id) + ((state.reflect || {}).off ? ' · ' + tr('بازتاب ماه خاموش') : ''), 'openProfileSettingsFull()')}
-      ${settingsRow('coin', '#0ea5e9', tr('ارز'), ratesSummary(), 'openSettingsRates()')}
+      ${settingsRow(
+        'chart',
+        '#a78bfa',
+        tr('بودجه، پاکت‌ها و ارز'),
+        profileName(profileFor(curMonthKey()).id) + ((state.reflect || {}).off ? ' · ' + tr('بازتاب ماه خاموش') : ''),
+        'openSettingsMoney()',
+        curName(baseCur())
+      )}
       ${settingsRow('bell', '#f59e0b', tr('یادآوری سررسیدها'), remindSummary(), 'openRemindSettings()')}
     </div>
+    ${settingsSection(tr('ابزار'))}
     <div class="sgroup">
       ${settingsRow('sparkle', '#f97316', tr('هوش مصنوعی'), gemini ? tr('خواندن فاکتور از عکس فعال است') : tr('خواندن فاکتور از عکس · تحلیل هوشمند'), 'openSettingsAI()', gemini ? tr('فعال') : tr('خاموش'))}
-    </div>
-    <div class="sgroup">
       ${settingsRow('info', '#64748b', tr('دربارهٔ برنامه'), (tr('نسخه') + ' ') + APP_VERSION + (window.__appUpdate === 'ready' ? ' · ' + tr('به‌روزرسانی آماده است') : ''), 'openSettingsAbout()')}
     </div>
   `);
 }
 
-export function openSettingsAppearance() {
+// «ظاهر، زبان و تقویم»: سه بخشِ مرتبط در یک صفحه (جای سه ردیفِ جدا در منوی اصلی)
+export function openSettingsDisplay() {
   const theme = currentTheme();
+  const pref = langPref();
+  const dp = digitsPref();
+  const cal = bookCal();
+  const opt = (name, on, click) => `<button type="button" class="srow" onclick="${click}">
+      <span class="smid"><span class="st1">${name}</span></span>
+      <span class="sval">${on ? icon('check') : ''}</span>
+    </button>`;
+  let first = '';
+  for (const tx of state.transactions) if (tx.dateISO && (!first || tx.dateISO < first)) first = tx.dateISO;
   openModal(`
-    ${settingsHeader(('🎨 ' + tr('ظاهر')), 'openSettings()')}
-    <h3 style="margin:8px 0 10px">${tr('تم')}</h3>
+    ${settingsHeader(tr('ظاهر، زبان و تقویم'), 'openSettings()')}
+    ${settingsSection(tr('تم'))}
     <div class="theme-grid">
       ${THEMES.map(
-        (t) => `<button type="button" class="theme-swatch ${theme === t.id ? 'on' : ''}" onclick="applyTheme('${t.id}');openSettingsAppearance()">
-        <span class="theme-dot" style="background:linear-gradient(135deg,${t.c1},${t.c2})"></span>
-        ${t.name}
+        (th) => `<button type="button" class="theme-swatch ${theme === th.id ? 'on' : ''}" onclick="applyTheme('${th.id}');openSettingsDisplay()">
+        <span class="theme-dot" style="background:linear-gradient(135deg,${th.c1},${th.c2})"></span>
+        ${th.name}
       </button>`
       ).join('')}
     </div>
+    ${settingsSection(t('set.langOnly'))}
+    <div class="sgroup">
+      ${opt(t('set.auto'), pref === 'auto', "changeLanguage('auto')")}
+      ${LANGS.map((l) => opt(l.name, pref === l.id, "changeLanguage('" + l.id + "')")).join('')}
+    </div>
+    ${settingsSection(t('set.digits'))}
+    <div class="sgroup">
+      ${opt(t('set.auto'), dp === 'auto', "changeDigits('auto')")}
+      ${opt('۱۲۳۴۵۶ · ' + t('set.digits.fa'), dp === 'fa', "changeDigits('fa')")}
+      ${opt('123456 · ' + t('set.digits.en'), dp === 'en', "changeDigits('en')")}
+    </div>
+    ${settingsSection(t('set.calendar'))}
+    <div class="sgroup">
+      ${settingsRow('calendar', '#0ea5e9', cal === 'gregorian' ? t('set.cal.greg') : t('set.cal.jalali'), tr('برای تغییر، دفتر جدید ساخته می‌شود'), 'openBookCalendar()')}
+      ${settingsRow('list', '#64748b', t('nav.tx'), first ? tr('از {d}', { d: fmtDate(first) }) : tr('هنوز تراکنشی ثبت نشده'), '', toFa(state.transactions.length))}
+    </div>
+    <p class="small muted" style="margin-top:12px">${t('set.langNote')}</p>
   `);
 }
+
+// «همگام‌سازی و پشتیبان»: درایو + نسخهٔ پشتیبان روی گوشی در یک صفحه
+export function openSettingsSync() {
+  const u = googleUserFromStore();
+  openModal(`
+    ${settingsHeader(tr('همگام‌سازی و پشتیبان'), 'openSettings()')}
+    ${settingsSection(tr('همگام‌سازی بین دستگاه‌ها'))}
+    <div class="sgroup">
+      ${settingsRow('cloud', '#3d8bfd', tr('گوگل درایو'), u ? esc(u.email || u.name || tr('متصل')) : tr('همگام‌سازی بین دستگاه‌ها'), 'openSettingsGoogle()', u ? esc(syncStatusText()) : tr('خاموش'))}
+    </div>
+    ${settingsSection(tr('نسخهٔ پشتیبان روی گوشی'))}
+    <div class="sgroup">
+      ${settingsRow('download', '#0d9488', tr('ذخیرهٔ یک نسخه از همهٔ داده‌ها روی گوشی'), sec.isEncrypted() ? tr('فایل رمزشده؛ برای روز مبادا یا انتقال به گوشی دیگر') : tr('فایل ساده؛ برای روز مبادا یا انتقال به گوشی دیگر'), 'exportBackup()')}
+      ${settingsRow('upload', '#f59e0b', tr('برگرداندن داده‌ها از فایل ذخیره‌شده'), tr('همهٔ داده‌های فعلی با محتوای فایل جایگزین می‌شود'), "document.getElementById('bkFile').click()")}
+    </div>
+    <input type="file" id="bkFile" accept="application/json,.json" style="display:none" onchange="importBackup(this.files[0])">
+    <p class="small muted" style="margin-top:12px">${(sec.isEncrypted() ? tr('فایل پشتیبان با همان رمز عبور برنامه رمز می‌شود؛ بدون رمز قابل باز شدن نیست.') : tr('فایل خروجی همهٔ داده‌های برنامه را بدون رمزنگاری دارد؛ آن را جای امن نگه دار.'))}</p>
+  `);
+}
+
+// «بودجه، پاکت‌ها و ارز»: سه ردیفِ پولی در یک صفحه
+export function openSettingsMoney() {
+  openModal(`
+    ${settingsHeader(tr('بودجه، پاکت‌ها و ارز'), 'openSettings()')}
+    <div class="sgroup">
+      ${settingsRow('chart', '#a78bfa', tr('الگوی پاکت‌ها'), profileName(profileFor(curMonthKey()).id) + ((state.reflect || {}).off ? ' · ' + tr('بازتاب ماه خاموش') : ''), 'openProfileSettingsFull()')}
+      ${settingsRow('target', '#16a34a', t('hl.title'), t('hl.set.fun'), 'openHealthSettings()')}
+      ${settingsRow('coin', '#0ea5e9', tr('ارز'), ratesSummary(), 'openSettingsRates()', curName(baseCur()))}
+    </div>
+  `);
+}
+
+// «ظاهر» دیگر صفحهٔ جدا نیست؛ رفته داخل «ظاهر، زبان و تقویم».
+// این نام برای صدازننده‌های قدیمی (رنگ‌آمیزی دوباره بعد از عوض‌شدن تم) نگه داشته شده.
+export function openSettingsAppearance() { openSettingsDisplay(); }
 
 export function openSettingsSecurity() {
   const enc = sec.isEncrypted();
@@ -1055,7 +1137,7 @@ export function openSettingsGoogle() {
       ${settingsRow('logout', '#ef4444', tr('خروج از حساب گوگل'), tr('فقط روی این دستگاه؛ همگام‌سازی متوقف می‌شود'), 'closeModal();googleSignOut()')}
     </div>`;
   }
-  openModal(`${settingsHeader(('☁️ ' + tr('گوگل درایو')), 'openSettings()')}${body}`);
+  openModal(`${settingsHeader(('☁️ ' + tr('گوگل درایو')), 'openSettingsSync()')}${body}`);
 }
 
 // ─── نرخ ارز ───
@@ -1084,7 +1166,7 @@ export function openSettingsRates() {
       <input class="input" style="width:130px;min-height:38px;text-align:left;direction:ltr" id="rate_${esc(c)}" type="number" step="any" inputmode="decimal" value="${state.rates[c] || ''}" placeholder="${curName(baseCur())}" onchange="saveRateFrom('${esc(c)}')">
     </div>`;
   openModal(`
-    ${settingsHeader(tr('ارز'), 'openSettings()')}
+    ${settingsHeader(tr('ارز'), 'openSettingsMoney()')}
     <div class="sgroup" style="margin-bottom:12px">${settingsRow('coin', '#0ea5e9', tr('واحد پایهٔ برنامه'), tr('همهٔ جمع‌ها و گزارش‌ها به این واحد'), 'openBaseCurrency()', curName(baseCur()))}</div>
     <p class="small muted">${curName(baseCur())} ${tr('به ازای هر واحد. فقط برای محاسبهٔ ارزش کلِ حساب‌ها، دارایی‌ها و طلب/بدهی‌های ارزی استفاده می‌شود؛ نرخ هر انتقال را موقع همان انتقال جدا وارد می‌کنی.')}</p>
     ${used.length ? `<div class="sgroup">${used.map(row).join('')}</div>` : ('<div class="hint">' + tr('هنوز حساب یا دارایی ارزی نداری.') + '</div>')}
@@ -1183,17 +1265,9 @@ function legalUrl(kind) {
 }
 
 // ─── پشتیبان‌گیری: خروجی / بازیابی JSON ───
-export function openSettingsBackup() {
-  openModal(`
-    ${settingsHeader(tr('نسخهٔ پشتیبان روی گوشی'), 'openSettings()')}
-    <p class="small muted">${(sec.isEncrypted() ? tr('فایل پشتیبان با همان رمز عبور برنامه رمز می‌شود؛ بدون رمز قابل باز شدن نیست.') : tr('فایل خروجی همهٔ داده‌های برنامه را بدون رمزنگاری دارد؛ آن را جای امن نگه دار.'))}</p>
-    <div class="sgroup">
-      ${settingsRow('download', '#0d9488', tr('ذخیرهٔ یک نسخه از همهٔ داده‌ها روی گوشی'), sec.isEncrypted() ? tr('فایل رمزشده؛ برای روز مبادا یا انتقال به گوشی دیگر') : tr('فایل ساده؛ برای روز مبادا یا انتقال به گوشی دیگر'), 'exportBackup()')}
-      ${settingsRow('upload', '#f59e0b', tr('برگرداندن داده‌ها از فایل ذخیره‌شده'), tr('همهٔ داده‌های فعلی با محتوای فایل جایگزین می‌شود'), "document.getElementById('bkFile').click()")}
-    </div>
-    <input type="file" id="bkFile" accept="application/json,.json" style="display:none" onchange="importBackup(this.files[0])">
-  `);
-}
+// صفحهٔ جداگانهٔ پشتیبان‌گیری هیچ‌جا لینک نشده بود (از UI غیرقابل دسترسی بود)؛
+// همان ردیف‌ها حالا داخل «همگام‌سازی و پشتیبان» هستند.
+export function openSettingsBackup() { openSettingsSync(); }
 
 export async function exportBackup() {
   try {
@@ -1443,29 +1517,9 @@ export function applyBaseCurrency() {
 }
 
 // ─── زبان و تقویم ───
-export function openSettingsLanguage() {
-  const pref = langPref();
-  const dp = digitsPref();
-  const opt = (name, on, click) => `<button type="button" class="srow" onclick="${click}">
-      <span class="smid"><span class="st1">${name}</span></span>
-      <span class="sval">${on ? icon('check') : ''}</span>
-    </button>`;
-  openModal(`
-    ${settingsHeader(t('set.language'), 'openSettings()')}
-    <h3 class="muted" style="margin:4px 0 6px">${t('set.langOnly')}</h3>
-    <div class="sgroup">
-      ${opt(t('set.auto'), pref === 'auto', "changeLanguage('auto')")}
-      ${LANGS.map((l) => opt(l.name, pref === l.id, "changeLanguage('" + l.id + "')")).join('')}
-    </div>
-    <h3 class="muted" style="margin:14px 0 6px">${t('set.digits')}</h3>
-    <div class="sgroup">
-      ${opt(t('set.auto'), dp === 'auto', "changeDigits('auto')")}
-      ${opt('۱۲۳۴۵۶ · ' + t('set.digits.fa'), dp === 'fa', "changeDigits('fa')")}
-      ${opt('123456 · ' + t('set.digits.en'), dp === 'en', "changeDigits('en')")}
-    </div>
-    <p class="small muted" style="margin-top:12px">${t('set.langNote')}</p>
-  `);
-}
+// «زبان و اعداد» هم رفته داخل «ظاهر، زبان و تقویم»؛ این نام برای
+// changeLanguage/changeDigits می‌ماند تا بعد از تغییر، همان صفحه رنگ‌آمیزی دوباره شود.
+export function openSettingsLanguage() { openSettingsDisplay(); }
 
 export function changeDigits(p) {
   setDigitsPref(p);
@@ -1475,12 +1529,12 @@ export function changeDigits(p) {
 
 export function openBookCalendar() {
   const cal = bookCal();
-  const opt = (id, name, sub) => `<button type="button" class="srow" onclick="${id === cal ? 'openSettingsBook()' : "openNewBook('" + id + "')"}">
+  const opt = (id, name, sub) => `<button type="button" class="srow" onclick="${id === cal ? 'openSettingsDisplay()' : "openNewBook('" + id + "')"}">
       <span class="smid"><span class="st1">${name}</span>${sub ? `<span class="st2">${sub}</span>` : ''}</span>
       <span class="sval">${id === cal ? icon('check') : icon('chevL')}</span>
     </button>`;
   openModal(`
-    ${settingsHeader(t('set.calendar'), 'openSettingsBook()')}
+    ${settingsHeader(t('set.calendar'), 'openSettingsDisplay()')}
     <div class="sgroup">
       ${opt('jalali', t('set.cal.jalali'), cal === 'jalali' ? tr('تقویم فعلی این دفتر') : tr('دفتر جدید با آرشیو دفتر فعلی'))}
       ${opt('gregorian', t('set.cal.greg'), cal === 'gregorian' ? tr('تقویم فعلی این دفتر') : tr('دفتر جدید با آرشیو دفتر فعلی'))}
@@ -1489,26 +1543,9 @@ export function openBookCalendar() {
   `);
 }
 
-export function openSettingsBook() {
-  const cal = bookCal();
-  const n = state.transactions.length;
-  let first = '';
-  for (const t of state.transactions) if (t.dateISO && (!first || t.dateISO < first)) first = t.dateISO;
-  openModal(`
-    ${settingsHeader(t('set.book'), 'openSettings()')}
-    <div class="sgroup">
-      ${settingsRow('calendar', '#0ea5e9', t('set.calendar'), tr('برای تغییر، دفتر جدید ساخته می‌شود'), 'openBookCalendar()', cal === 'gregorian' ? t('set.cal.greg') : t('set.cal.jalali'))}
-      ${settingsRow('list', '#64748b', t('nav.tx'), first ? tr('از {d}', { d: fmtDate(first) }) : tr('هنوز تراکنشی ثبت نشده'), '', toFa(n))}
-    </div>
-    <h3 class="muted" style="margin:14px 0 6px">${tr('نسخهٔ پشتیبان روی گوشی')}</h3>
-    <div class="sgroup">
-      ${settingsRow('download', '#0d9488', tr('ذخیرهٔ یک نسخه از همهٔ داده‌ها روی گوشی'), sec.isEncrypted() ? tr('فایل رمزشده؛ برای روز مبادا یا انتقال به گوشی دیگر') : tr('فایل ساده؛ برای روز مبادا یا انتقال به گوشی دیگر'), 'exportBackup()')}
-      ${settingsRow('upload', '#f59e0b', tr('برگرداندن داده‌ها از فایل ذخیره‌شده'), tr('همهٔ داده‌های فعلی با محتوای فایل جایگزین می‌شود'), "document.getElementById('bkFile').click()")}
-    </div>
-    <input type="file" id="bkFile" accept="application/json,.json" style="display:none" onchange="importBackup(this.files[0])">
-    <p class="small muted" style="margin-top:12px">${(sec.isEncrypted() ? tr('فایل پشتیبان با همان رمز عبور برنامه رمز می‌شود؛ بدون رمز قابل باز شدن نیست.') : tr('فایل خروجی همهٔ داده‌های برنامه را بدون رمزنگاری دارد؛ آن را جای امن نگه دار.'))}</p>
-  `);
-}
+// «دفتر» دیگر ردیفِ جدا ندارد: تقویمش رفته داخل «ظاهر، زبان و تقویم» و
+// نسخهٔ پشتیبانش داخل «همگام‌سازی و پشتیبان». این نام برای سازگاری می‌ماند.
+export function openSettingsBook() { openSettingsDisplay(); }
 
 // الگوی پاکت‌ها + روشن/خاموش بازتاب ماه
 export function openProfileSettingsFull() {
