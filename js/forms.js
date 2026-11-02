@@ -1087,6 +1087,9 @@ export async function pasteScanText() {
 }
 
 function acceptTextRows(rows, how) {
+  // متنِ خوانده‌شده دیگر لازم نیست؛ اگر بماند دفعهٔ بعد شیت با پیامک‌های قبلی پر
+  // باز می‌شود و کاربر فکر می‌کند پیامکِ تازه‌اش خوانده نشده.
+  lastScanText = '';
   applyPaperRows(rows);
   openPaperReview();
   toast(how === 'ai'

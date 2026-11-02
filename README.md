@@ -111,7 +111,7 @@ All amounts are stored in the account’s own currency; the base currency is use
 
 ## Version
 
-Current: `2.38.33` (root) / `2.38.33-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+Current: `2.38.34` (root) / `2.38.34-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
 
 ## License
 
