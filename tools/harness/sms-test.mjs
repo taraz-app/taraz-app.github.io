@@ -68,7 +68,7 @@ $('scTxt').dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 await app.wait(40);
 check('با ضربه روی آن، شیتِ متن باز می‌شود', app.overlayOpen() && !!$('scanTxt'));
 check('شیتِ متن دکمهٔ کلیپ‌بورد و پاک‌کردن دارد', /pasteScanText\(/.test(app.sheetHtml()) && /scanTxtClear\(/.test(app.sheetHtml()));
-check('بدون کلید، راهنما به پارسرِ محلی اشاره می‌کند', /پارسرِ محلی/.test($('scanTxtHint').textContent), $('scanTxtHint').textContent);
+check('بدون کلید، راهنما به پارسرِ خودِ برنامه اشاره می‌کند', /پارسرِ خودِ برنامه|پارسرِ محلی/.test($('scanTxtHint').textContent), $('scanTxtHint').textContent);
 window.closeModal();
 
 // دکمهٔ داخل فرم تراکنش
@@ -112,6 +112,32 @@ check('مبلغِ ریالی به تومان ثبت شد (نه خام)', added.s
 check('تراکنشِ درآمدی هم ثبت شد', added.some((t) => t.type === 'in'));
 check('حساب‌ها به آیدیِ واقعی وصل شدند', added.every((t) => st.state.accounts.some((a) => a.id === t.accountId)));
 
+// ── ۳٫۵. پیامکِ واقعیِ بانک ملی و تجارت (قالبِ «کلید: مقدار») ─────────────
+const REAL_PASTE = [
+  'بانك ملي ايران\nخريداينترنتي:2,362,500-\nحساب:02000\nمانده:11,919,634\n0810-21:55',
+  'بانك ملي ايران\nانتقال:30,000,000+\nحساب:02000\nمانده:30,338,121\n0810-20:49',
+  'بانك ملي ايران\nانتقال:19,014,500-\nحساب:02000\nمانده:455,121\n0808-12:43',
+  '*بانک تجارت* \nحساب: 0377806172623 \nبرداشت: 50,025,000 ریال \nاز طريق: شتاب  \nمانده: 30,925,720 ریال \n1405-08-11\n18:36',
+  '*بانک تجارت* \nحساب: 0177005368448 \nبرداشت: 54,545,400 ریال \nاز طريق: شعبه   \nکدشعبه: 3001\nمانده: 1,362,260 ریال \n1405-07-30\n14:27',
+  '*بانک تجارت* \nحساب: 0377806172623 \nواریز: 2,250,000 ریال \nاز طريق: خودپرداز  \nمانده: 85,618,720 ریال \n1405-07-29\n18:45',
+].join('\n\n');
+const real = sms.parseBankSms(REAL_PASTE);
+check('هر پیامکِ ملی/تجارت یک پیامکِ جدا شمرده می‌شود', sms.splitMessages(REAL_PASTE).length === 6, 'msgs=' + sms.splitMessages(REAL_PASTE).length);
+check('۶ پیامک → ۶ تراکنش', real.length === 6, 'rows=' + real.length);
+check('countTxBlocks هم ۶ است', sms.countTxBlocks(REAL_PASTE) === 6);
+check('ملی: علامتِ «-» یعنی خرج و مبلغ ریال→تومان', real[0].type === 'out' && real[0].amount === 236250, JSON.stringify([real[0].type, real[0].amount]));
+check('ملی: «خريداينترنتي» → «خرید اینترنتی»', real[0].note === 'خرید اینترنتی', real[0].note);
+check('ملی: «0810-21:55» → تاریخ و ساعتِ درست', real[0].date === '2026-11-01' && real[0].time === '21:55', real[0].date + ' ' + real[0].time);
+check('ملی: «حساب:02000» شمارهٔ حساب است نه کارتِ مهرِ زمانی', real[0].account === 'ملی 2000', real[0].account);
+check('ملی: علامتِ «+» یعنی درآمد', real[1].type === 'in' && real[1].amount === 3000000, JSON.stringify([real[1].type, real[1].amount]));
+check('ملی: «0808» هم خوانده شد', real[2].date === '2026-10-30' && real[2].amount === 1901450, real[2].date + ' ' + real[2].amount);
+check('تجارت: کانالِ «از طریق» در یادداشت', real[3].note === 'برداشت (شتاب)', real[3].note);
+check('تجارت: ۴ رقم آخرِ حسابِ ۱۳ رقمی', real[3].account === 'تجارت 2623', real[3].account);
+check('تجارت: تاریخ و ساعت روی خطِ جدا', real[3].date === '2026-11-02' && real[3].time === '18:36', real[3].date + ' ' + real[3].time);
+check('تجارت: «کدشعبه» مبلغ نشد', real[4].amount === 5454540 && real[4].account === 'تجارت 8448', JSON.stringify([real[4].amount, real[4].account]));
+check('تجارت: واریز از خودپرداز = درآمد', real[5].type === 'in' && real[5].amount === 225000 && real[5].note === 'واریز (خودپرداز)', JSON.stringify([real[5].type, real[5].amount, real[5].note]));
+check('مانده هیچ‌جا تراکنش نشد', !real.some((r) => r.amount === 3092572 || r.amount === 1191963 || r.amount === 3033812));
+
 // ── ۴. مسیرِ هوش مصنوعی (با پاسخِ ساختگی) ───────────────────────────────
 window.localStorage.setItem('capital_gemini_key', 'test-key');
 const calls = [];
@@ -134,10 +160,13 @@ window.__fetchStub = async (url, init) => {
   }
   return null;
 };
+const AI_TEXT = 'مبلغ پانصد هزار تومان از حساب شما کسر شد - 1405/08/10 ساعت 10:20';
+check('متنِ بدونِ رقمِ مبلغ را پارسرِ محلی نمی‌خواند', sms.parseBankSms(AI_TEXT).length === 0);
+check('ولی یک بلوکِ تراکنش شمرده می‌شود', sms.countTxBlocks(AI_TEXT) === 1);
 window.openScanText();
 await app.wait(20);
 check('با کلید، راهنما به هوش مصنوعی اشاره می‌کند', /هوش مصنوعی/.test($('scanTxtHint').textContent));
-$('scanTxt').value = PASTE;
+$('scanTxt').value = AI_TEXT;
 window.submitScanText();
 await app.wait(120);
 check('درخواست به گوگل رفت', calls.length >= 1, 'calls=' + calls.length);
@@ -152,6 +181,22 @@ check('مبلغِ تومانیِ مدل دست نخورد', aiVals[1] === '45000
 check('یادداشتِ مدل در ردیف است', [...doc.querySelectorAll('[id^="pNote_"]')].some((i) => /دیجی/.test(i.value)));
 window.closeModal();
 
+// پیامکِ قالب‌دار را پارسرِ خودِ برنامه می‌خواند: بی‌خرجِ سهمیه و بی‌انتظار
+calls.length = 0;
+window.openScanText();
+await app.wait(20);
+$('scanTxt').value = REAL_PASTE;
+window.submitScanText();
+await app.wait(80);
+check('پیامکِ قالب‌دار بدونِ صدا زدنِ گوگل خوانده شد', calls.length === 0 && rowsOf().length === 6, 'calls=' + calls.length + ' rows=' + rowsOf().length);
+const realVals = rowsOf().map((i) => i.value.replace(/[^\d]/g, ''));
+check('مبلغ‌های ملی/تجارت در ردیف‌ها درست نشست', realVals[0] === '236250' && realVals[3] === '5002500', realVals.join(','));
+const realAccs = [...doc.querySelectorAll('select[id^="pAcct_"]')].map((x) => x.value);
+check('ردیف‌های «ملی 2000» به حسابِ ملیِ برنامه وصل شدند', realAccs[0] === 'a2' && realAccs[1] === 'a2' && realAccs[2] === 'a2', realAccs.join(','));
+const realDates = [...doc.querySelectorAll('input[id^="pDate_"]')].map((x) => x.value);
+check('تاریخِ هر ردیف پر شده و با پیامک می‌خواند', realDates.length === 6 && realDates[0] === '2026-11-01' && realDates[3] === '2026-11-02', realDates.join(','));
+window.closeModal();
+
 // ── ۵. هوش مصنوعی نرسید → پارسرِ محلی ───────────────────────────────────
 window.__fetchStub = async (url) => {
   const u = String(url);
@@ -159,12 +204,13 @@ window.__fetchStub = async (url) => {
   if (u.includes('/v1beta/models')) { const p = { models: [{ name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] }] }; return { ok: true, status: 200, json: async () => p, text: async () => JSON.stringify(p) }; }
   return null;
 };
+const MIX = REAL_PASTE + '\n\n' + AI_TEXT;
 window.openScanText();
 await app.wait(20);
-$('scanTxt').value = PASTE;
+$('scanTxt').value = MIX;
 window.submitScanText();
 await app.wait(150);
-check('وقتی هوش مصنوعی خطا داد، پارسرِ محلی لیست را ساخت', app.overlayOpen() && rowsOf().length === 7, 'rows=' + rowsOf().length);
+check('متنِ قاطی: وقتی مدل خطا داد، پارسرِ محلی همان ۶ پیامکِ قالب‌دار را ساخت', app.overlayOpen() && rowsOf().length === 6, 'rows=' + rowsOf().length);
 window.closeModal();
 
 // متنِ بی‌ربط با کلیدِ خراب: باید پیامِ خطا بدهد، نه صفحهٔ خالی

@@ -1,7 +1,7 @@
 import { esc, fmt, fmtShort, store, toast, uid, todayISO, haptic, toFa, infoTip, amountWords, pctSign, decSep, calcEval, nowHM, celebrate } from './utils.js';
 import { icon } from './icons.js';
 import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, readSmsText, lastJpegB64 } from './scan.js';
-import { parseBankSms } from './sms.js';
+import { parseBankSms, countTxBlocks } from './sms.js';
 import { rememberScan, listScans, loadScan, deleteScan } from './scanhist.js';
 import { cardHtml, cardDigits, luhnOk, bankByBin, bankByName, fmtCardNo, allBanks, allExchanges } from './cards.js';
 import { apickHtml, acctVisual, acctBalText } from './acctpick.js';
@@ -1043,7 +1043,7 @@ export function openScanText(prefill) {
       <button type="button" class="chip" onclick="pasteScanText()">${icon('copy')} ${tr('از کلیپ‌بورد')}</button>
       <button type="button" class="chip" onclick="scanTxtClear()">${icon('trash')} ${tr('پاک کردن')}</button>
     </div>
-    <div class="hint" id="scanTxtHint" style="margin:10px 0 12px">${keyOk ? tr('با هوش مصنوعی خوانده می‌شود؛ اگر اینترنت یا کلید نرسد، پارسرِ محلیِ برنامه امتحان می‌شود.') : tr('کلیدِ هوش مصنوعی نداری؛ با پارسرِ محلیِ برنامه خوانده می‌شود (بدون اینترنت هم کار می‌کند).')}</div>
+    <div class="hint" id="scanTxtHint" style="margin:10px 0 12px">${keyOk ? tr('پیامکِ قالب‌دارِ بانک (ملی، تجارت، ملت و…) را پارسرِ خودِ برنامه دقیق و فوری می‌خواند؛ متنِ آزاد را هوش مصنوعی.') : tr('با پارسرِ خودِ برنامه خوانده می‌شود: پیامکِ بانک ملی، تجارت، ملت، بلوبانک و… بدون اینترنت هم دقیق خوانده می‌شوند.')}</div>
     <button class="btn primary block" onclick="submitScanText()">${icon('scan')} ${tr('خواندن و ساخت لیست')}</button>
   `);
   const el = document.getElementById('scanTxt');
@@ -1057,7 +1057,7 @@ export function scanTxtHint() {
   if (!el || !box) return;
   const txt = String(el.value || '').trim();
   if (!txt) {
-    box.innerHTML = hasGeminiKey() ? tr('با هوش مصنوعی خوانده می‌شود؛ اگر اینترنت یا کلید نرسد، پارسرِ محلیِ برنامه امتحان می‌شود.') : tr('کلیدِ هوش مصنوعی نداری؛ با پارسرِ محلیِ برنامه خوانده می‌شود (بدون اینترنت هم کار می‌کند).');
+    box.innerHTML = hasGeminiKey() ? tr('پیامکِ قالب‌دارِ بانک (ملی، تجارت، ملت و…) را پارسرِ خودِ برنامه دقیق و فوری می‌خواند؛ متنِ آزاد را هوش مصنوعی.') : tr('با پارسرِ خودِ برنامه خوانده می‌شود: پیامکِ بانک ملی، تجارت، ملت، بلوبانک و… بدون اینترنت هم دقیق خوانده می‌شوند.');
     return;
   }
   const n = parseBankSms(txt).length;
@@ -1089,9 +1089,11 @@ export async function pasteScanText() {
 function acceptTextRows(rows, how) {
   applyPaperRows(rows);
   openPaperReview();
-  toast(how === 'local'
-    ? tr('{n} تراکنش از متن خوانده شد — ویرایش کن و ثبت کن', { n: toFa(rows.length) })
-    : tr('{n} تراکنش خوانده شد — قبل از ثبت چک کن', { n: toFa(rows.length) }));
+  toast(how === 'ai'
+    ? tr('{n} تراکنش خوانده شد — قبل از ثبت چک کن', { n: toFa(rows.length) })
+    : how === 'fallback'
+      ? tr('هوش مصنوعی نرسید؛ {n} تراکنش با پارسرِ خودِ برنامه خوانده شد', { n: toFa(rows.length) })
+      : tr('{n} تراکنش از متن خوانده شد — ویرایش کن و ثبت کن', { n: toFa(rows.length) }));
 }
 
 export async function submitScanText() {
@@ -1100,23 +1102,25 @@ export async function submitScanText() {
   if (!text) { toast(tr('اول متن پیامک را بچسبان')); haptic(30); return; }
   lastScanText = text;
   const accts = activeAccounts().map((a) => a.name);
+  const local = parseBankSms(text);
+  const blocks = countTxBlocks(text);
+  // پیامکِ قالب‌دارِ بانک (ملی/تجارت/…) را پارسرِ خودِ برنامه دقیق‌تر و بی‌صبرِ اینترنت می‌خواند؛
+  // فقط وقتی سراغِ هوش مصنوعی می‌رویم که متن آزاد باشد یا پارسر کمتر از پیامک‌ها گرفته باشد.
+  if (local.length && local.length >= blocks) { acceptTextRows(local, 'local'); return; }
   if (hasGeminiKey()) {
     toast(tr('در حال خواندن متن…'));
     try {
       const rows = await readSmsText(text, accts);
+      // اگر پارسرِ محلی ردیفِ بیشتری پیدا کرده بود، همان کامل‌تر است
+      if (local.length > rows.length) { acceptTextRows(local, 'local'); return; }
       rememberScan({ kind: 'list', list: rows }, '', null);
       acceptTextRows(rows, 'ai');
       return;
     } catch (e) {
-      if (!(e && e.message === 'NO_KEY')) {
-        const local = parseBankSms(text);
-        if (local.length) { acceptTextRows(local, 'local'); return; }
-        toast((e && e.message) || tr('خواندن متن نشد'));
-        return;
-      }
+      if (local.length) { acceptTextRows(local, 'fallback'); return; }
+      if (!(e && e.message === 'NO_KEY')) { toast((e && e.message) || tr('خواندن متن نشد')); return; }
     }
   }
-  const local = parseBankSms(text);
   if (!local.length) { toast(tr('در این متن تراکنشی پیدا نشد')); haptic(30); return; }
   acceptTextRows(local, 'local');
 }
@@ -1139,16 +1143,27 @@ function applyPaperRows(rows) {
   }));
 }
 
+const GENERIC_ACCT_WORD = /^(بانک|مؤسسه|موسسه|حساب|کارت|شعبه|شبا|شماره)$/;
+
 function matchAccountId(name) {
-  const n = String(name || '')
-    .trim()
-    .replace(/\s+/g, '');
+  const raw = String(name || '').trim();
+  const n = raw.replace(/\s+/g, '');
   if (!n) return lastAccountId();
   const digits = n.replace(/\D/g, '');
   for (const a of state.accounts) {
     const an = String(a.name || '').replace(/\s+/g, '');
     if (an && (an === n || an.indexOf(n) >= 0 || n.indexOf(an) >= 0)) return a.id;
     if (a.last4 && (n.indexOf(String(a.last4)) >= 0 || digits.indexOf(String(a.last4)) >= 0)) return a.id;
+  }
+  // برچسبِ پیامک مثل «ملی 2000» یا «تجارت 2623»: نامِ بانک را با نام یا بانکِ حساب‌ها جور کن
+  const words = raw.split(/[\s·،,|()\-]+/).filter((w) => w.length >= 3 && !/\d/.test(w) && !GENERIC_ACCT_WORD.test(w));
+  if (words.length) {
+    for (const a of state.accounts) {
+      const an = String(a.name || '').replace(/\s+/g, '');
+      const ab = String(a.bank || '').replace(/\s+/g, '');
+      if (an && words.some((w) => an.indexOf(w) >= 0)) return a.id;
+      if (ab && words.some((w) => ab.indexOf(w) >= 0)) return a.id;
+    }
   }
   return lastAccountId();
 }
