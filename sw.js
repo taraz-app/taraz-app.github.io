@@ -1,4 +1,4 @@
-const CACHE = 'capital-app-v141';
+const CACHE = 'capital-app-v142';
 const ASSETS = [
   './',
   './index.html',
@@ -86,6 +86,7 @@ const ASSETS = [
   './js/healthui.js',
   './js/securestore.js',
   './js/crypto.js',
+  './js/acctpick.js',
   './icons/icon-192.png?v=5',
   './icons/icon-512.png?v=5',
   './icons/icon-maskable-192.png?v=5',

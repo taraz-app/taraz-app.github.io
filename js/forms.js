@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, lastJpegB64 } from './scan.js';
 import { rememberScan, listScans, loadScan, deleteScan } from './scanhist.js';
 import { cardHtml, cardDigits, luhnOk, bankByBin, bankByName, fmtCardNo, allBanks, allExchanges } from './cards.js';
+import { apickHtml, acctVisual, acctBalText } from './acctpick.js';
 import { jalaliNow, monthOfISO, fmtDate, monthLabel, curMonthKey, shiftMonth, bookNow, bookCalendar } from './jalali.js';
 import { jalaliMonths, gregMonths } from './i18n.js';
 import { closeModal, openModal, askConfirm } from './modal.js';
@@ -30,7 +31,6 @@ import {
   sortTxs,
   state,
   accountGroups, activeAccounts, archivedAccounts,
-  accountOptGroups,
   displayTxs,
   institutionOf, baseCur, rateOf, incomeIn } from './state.js';
 import { t as tr } from './i18n.js';
@@ -38,9 +38,28 @@ import { titleChipsHtml, subChipsHtml, lookupTitle, learnTitle, subsFor, subLabe
 import { pickSub } from './subsui.js';
 
 const LAST_ACCT_KEY = 'capital_last_account';
+const LAST_TRANSFER_KEY = 'capital_last_transfer';
 
 function rememberAccount(id) {
   if (id) store.set(LAST_ACCT_KEY, id);
+}
+
+// آخرین مبدأ/مقصدِ انتقال: دفعهٔ بعد همان دو حساب پیش‌فرض می‌شوند (نه دو حساب اولِ لیست)
+function rememberTransfer(from, to) {
+  if (from && to && from !== to) store.set(LAST_TRANSFER_KEY, JSON.stringify({ from, to, at: Date.now() }));
+}
+
+function lastTransferPair() {
+  try {
+    const p = JSON.parse(store.get(LAST_TRANSFER_KEY) || 'null');
+    const ok = (id) => {
+      const a = id && accountById(id);
+      return a && !a.archived ? id : '';
+    };
+    return { from: ok(p && p.from), to: ok(p && p.to) };
+  } catch (e) {
+    return { from: '', to: '' };
+  }
 }
 
 function lastAccountId() {
@@ -253,7 +272,6 @@ export function openTxForm(tx, opts) {
   const selectedAccountId = tx ? tx.accountId : pre.accountId || lastAccountId();
   const selectedAccount = accountById(selectedAccountId);
   const amountCur = selectedAccount ? selectedAccount.currency : baseCur();
-  const acctOpts = accountOptGroups(selectedAccountId);
   const defaultCat = tx && !isInvoice(tx) ? (tx.cat === 'loan' ? 'need' : tx.cat) : presetCat || 'need';
   const pickedCat = tx || presetCat || pre.cat ? defaultCat : null; // تراکنش تازه: پاکت هنوز انتخاب نشده
   const showReflect = !!(pickedCat === 'waste' && type === 'out' && txMode === 'simple');
@@ -304,7 +322,7 @@ export function openTxForm(tx, opts) {
       </div>
     </div>
     <div class="field"><label>${tr('از کدام حساب؟')}</label>
-      <select class="input" id="txAccount" onchange="syncTxAmountLabel()">${acctOpts}</select>
+      ${apickHtml({ id: 'txAccount', selected: selectedAccountId, onchange: 'syncTxAmountLabel()' })}
     </div>
     <div class="row" style="flex-wrap:nowrap">
       <div class="field col" style="min-width:0"><label>${tr('تاریخ')}</label>
@@ -1041,10 +1059,6 @@ function matchAccountId(name) {
   return lastAccountId();
 }
 
-function paperAcctOpts(selected) {
-  return accountOptGroups(selected);
-}
-
 export function openPaperReview(altKind) {
   if (!paperDraft.length) {
     toast(tr('چیزی برای ثبت نیست'));
@@ -1065,7 +1079,7 @@ export function openPaperReview(altKind) {
           <div class="chips">${catChipsHtml(cat, 'setPaperCat', r.id)}</div>
         </div>
         <div class="field"><label>${tr('حساب')}</label>
-          <select class="input" id="pAcct_${r.id}">${paperAcctOpts(r.accountId)}</select>
+          ${apickHtml({ id: 'pAcct_' + r.id, selected: r.accountId, compact: true })}
         </div>
         <div class="field"><label>${tr('توضیح')}</label>
           <input class="input" id="pNote_${r.id}" value="${esc(r.note || '')}" placeholder="${tr('مثلاً نان')}">
@@ -1406,8 +1420,9 @@ function acctLabel(a) {
   return inst && inst !== a.name ? inst + ' · ' + a.name : a.name;
 }
 
-export function openQuickTx(opts) {
-  const rep = opts.repeatOf || null;
+// opts اختیاری است: دکمهٔ «ثبت تراکنش» در لیستِ خالی (render.js) آن را بی‌آرگومان صدا می‌زند
+export function openQuickTx(opts = {}) {
+  const rep = (opts && opts.repeatOf) || null;
   qa.expr = '';
   qa.amount = rep ? String(rep.amount || '') : opts.amount ? String(opts.amount) : '';
   qa.type = rep ? (rep.type === 'in' ? 'in' : 'out') : 'out';
@@ -1450,7 +1465,7 @@ export function openQuickTx(opts) {
       <button type="button" class="op eq off" id="qaEq" onclick="qaEq()">=</button>
     </div>
     <div class="qa-meta">
-      <button type="button" class="btn sm" id="qaAcctBtn" onclick="qaPickAccount()">${icon('card')}<b id="qaAcctName">${acct ? esc(acctLabel(acct)) : '—'}</b></button>
+      <button type="button" class="btn sm" id="qaAcctBtn" onclick="qaPickAccount()"><span class="qa-ic" id="qaAcctIc">${qaAcctIcon(acct)}</span><b id="qaAcctName">${acct ? esc(acctLabel(acct)) : '—'}</b></button>
       <button type="button" class="btn sm" onclick="qaMore()">${icon('edit')}<b>${tr('یادداشت، تاریخ، فاکتور…')}</b></button>
     </div>
     <div class="qa-submit">
@@ -1609,10 +1624,13 @@ export function qaPickAccount() {
   const list = activeAccounts();
   if (list.length <= 1) return;
   const wrap = document.getElementById('qaAcctBtn');
-  const row = (a) => `<button type="button" class="srow" style="min-height:44px" onclick="qaChooseAccount('${a.id}')">
-        <span class="ib sm">${icon(a.type === 'ارز دیجیتال' ? 'coin' : a.type === 'نقدی' ? 'cash' : a.type === 'کیف پول آنلاین' ? 'phone' : 'card')}</span>
-        <span class="smid"><span class="st1">${esc(a.name)}</span><span class="st2">${esc(tr(a.type))} · ${esc(curName(a.currency))}</span></span>
-        ${a.id === qa.accountId ? icon('check') : ''}</button>`;
+  const row = (a) => {
+    const v = acctVisual(a);
+    return `<button type="button" class="srow" style="min-height:46px" onclick="qaChooseAccount('${a.id}')">
+        <span class="sic ${v.light ? 'logo' : ''}" style="background:${v.brand}">${v.html}</span>
+        <span class="smid"><span class="st1">${esc(a.name)}</span><span class="st2">${esc(tr(a.type))} · ${esc(acctBalText(a))} ${esc(curName(a.currency))}</span></span>
+        <span class="sval">${a.id === qa.accountId ? icon('check') : ''}</span></button>`;
+  };
   const gs = accountGroups(list);
   const grouped = gs.length > 1 || (gs[0] && gs[0].key !== '__none');
   const html = `<div class="card" style="margin:0 0 var(--sp-2);padding:var(--sp-2);max-height:40vh;overflow:auto" id="qaAcctList">${gs
@@ -1628,11 +1646,20 @@ export function qaPickAccount() {
   if (wrap) wrap.parentElement.insertAdjacentHTML('beforebegin', html);
 }
 
+// آیکن دکمهٔ حساب در کیبوردِ ثبت سریع: لوگوی بانک/صرافی، وگرنه آیکن نوع حساب
+function qaAcctIcon(a) {
+  if (!a) return icon('card');
+  const v = acctVisual(a);
+  return v.light ? v.html : `<span class="qa-ic-tile" style="background:${v.brand}">${v.html}</span>`;
+}
+
 export function qaChooseAccount(id) {
   qa.accountId = id;
   const a = accountById(id);
   const nm = document.getElementById('qaAcctName');
+  const ic = document.getElementById('qaAcctIc');
   const cu = document.getElementById('qaCur');
+  if (ic) ic.innerHTML = qaAcctIcon(a);
   if (nm && a) nm.textContent = acctLabel(a);
   if (cu && a) cu.textContent = curName(a.currency);
   if (a && isBigUnit(a.currency) && qa.amount.includes('.')) qa.amount = String(Math.round(Number(qa.amount) || 0) || '');
@@ -2298,10 +2325,13 @@ export function openTransferForm(tx) {
   const out = pair ? state.transactions.find((t) => t.pair === pair && t.type === 'transferOut') : null;
   const inn = pair ? state.transactions.find((t) => t.pair === pair && t.type === 'transferIn') : null;
   editingTransferPair = pair;
-  const fromId = out ? out.accountId : act[0].id;
+  const memo = pair ? { from: '', to: '' } : lastTransferPair();
+  const fromId = out ? out.accountId : memo.from || act[0].id;
   const toId = inn
     ? inn.accountId
-    : act.find((a) => a.id !== fromId)?.id || act[1].id;
+    : memo.to && memo.to !== fromId
+      ? memo.to
+      : act.find((a) => a.id !== fromId)?.id || act[1].id;
   transferStoredRates = {};
   if (out) {
     const fa = accountById(out.accountId);
@@ -2314,11 +2344,10 @@ export function openTransferForm(tx) {
   const sameCurInit = !!(fa2 && ta2 && fa2.currency === ta2.currency);
   const feeOld = pair ? state.transactions.find((x) => x.pair === pair && x.nobal) : null;
   const feePocketInit = (feeOld && feeOld.cat) || 'waste';
-  const opts = accountOptGroups('');
   openModal(`<button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
     <h2 style="display:flex;align-items:center">${pair ? tr('ویرایش انتقال') : tr('انتقال بین حساب‌ها')}${infoTip(tr('انتقال هزینه یا درآمد نیست و در گزارش‌ها حساب نمی‌شود.'), 'lg')}</h2>
-    <div class="field"><label>${tr('از حساب')}</label><select class="input" id="trFrom" onchange="transferAccountsChanged()">${opts}</select></div>
-    <div class="field"><label>${tr('به حساب')}</label><select class="input" id="trTo" onchange="transferAccountsChanged()">${opts}</select></div>
+    <div class="field"><label>${tr('از حساب')}</label>${apickHtml({ id: 'trFrom', selected: fromId, onchange: 'transferAccountsChanged()', title: tr('انتقال از کدام حساب؟') })}</div>
+    <div class="field"><label>${tr('به حساب')}</label>${apickHtml({ id: 'trTo', selected: toId, onchange: 'transferAccountsChanged()', title: tr('انتقال به کدام حساب؟') })}</div>
     <div class="field"><label>${tr('مبلغ از حساب مبدأ')}</label><input class="input" id="trAmount" type="number" step="any" inputmode="decimal" min="0" placeholder="${tr('مبلغ به واحد حساب مبدأ')}" value="${out ? out.amount : ''}" oninput="updateTransferPreview()"></div>
     <div class="field" id="trAmountToWrap" style="display:${sameCurInit ? '' : 'none'}"><label>${tr('مبلغ واریز به مقصد (اختیاری)')}</label><input class="input" id="trAmountTo" type="number" step="any" inputmode="decimal" min="0" placeholder="${tr('خالی = برابر با مبلغ برداشت')}" value="${inn && sameCurInit ? inn.amount : ''}" oninput="updateTransferPreview()"></div>
     <div class="field" id="trFeePocketWrap" style="display:${sameCurInit ? '' : 'none'}"><label>${tr('کیف کارمزد (اگر واریز کمتر از برداشت باشد)')}</label><select class="input" id="trFeePocket" onchange="updateTransferPreview()">${CATS.filter((c) => !c.loan).map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></div>
@@ -2330,8 +2359,6 @@ export function openTransferForm(tx) {
     <button class="btn primary block" onclick="saveTransfer()">${pair ? tr('ذخیره انتقال') : tr('ثبت انتقال')}</button>
     ${pair ? '<button class="btn danger block" style="margin-top:8px" onclick="delTx(\'' + (out || inn).id + ('\')">' + tr('حذف این انتقال') + '</button>') : ''}
   `);
-  document.getElementById('trFrom').value = fromId;
-  document.getElementById('trTo').value = toId;
   document.getElementById('trFeePocket').value = feePocketInit;
   renderTransferRates();
   renderTransferBalance();
@@ -2612,6 +2639,7 @@ export function saveTransfer() {
     syncTransferFee(pair, { fee, pocket: feePocket, from, dateISO, month, stamp });
     toast((tr('انتقال با موفقیت ثبت شد') + ' ✓'));
   }
+  rememberTransfer(from, to);
   editingTransferPair = null;
   save();
   closeModal();

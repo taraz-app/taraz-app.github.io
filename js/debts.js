@@ -3,11 +3,12 @@ import { esc, fmt, fmtShort, store, toast, uid, todayISO, infoTip } from './util
 import { fmtDate, monthOfISO } from './jalali.js';
 import { closeModal, openModal, askConfirm } from './modal.js';
 import { render } from './view.js';
-import { save, state, accountById, rateOf, accountOptGroups, LOAN_CAT, CATS, baseCur, curName } from './state.js';
+import { save, state, accountById, rateOf, LOAN_CAT, CATS, baseCur, curName } from './state.js';
 import { subChipsHtml } from './subs.js';
 import { pickSub } from './subsui.js';
 import { overdueInstallments } from './installments.js';
 import { t as tr } from './i18n.js';
+import { apickHtml } from './acctpick.js';
 
 const NOTIFY_DAY_KEY = 'capital_debt_notify_day';
 let editingDebtId = null;
@@ -99,9 +100,16 @@ function lastDebtAccountId() {
   return act.length ? act[0].id : '';
 }
 
+// انتخابگر حساب با چیپس و لوگو؛ «بدون اتصال به حساب» هم یکی از گزینه‌هاست
 function accountOptionsHtml(selectedId) {
-  const opts = accountOptGroups(selectedId);
-  return `<option value="" ${!selectedId ? 'selected' : ''}>— ${tr('بدون اتصال به حساب (فقط یادداشت) —')}</option>${opts}`;
+  return apickHtml({
+    id: 'dAccount',
+    selected: selectedId || '',
+    allowNone: true,
+    noneLabel: tr('بدون اتصال به حساب'),
+    onchange: 'syncDebtAmountLabel()',
+    title: tr('از/به کدام حساب؟'),
+  });
 }
 
 export function openDebtForm(d) {
@@ -128,7 +136,7 @@ export function openDebtForm(d) {
       </div>
     </div>
     <div class="field"><label>${tr('از/به کدام حساب؟')}</label>
-      <select class="input" id="dAccount" onchange="syncDebtAmountLabel()">${accountOptionsHtml(accId)}</select>
+      ${accountOptionsHtml(accId)}
       <div class="hint" style="margin-top:6px">${tr('با انتخاب حساب، مبلغ خودکار از حساب کم/به آن اضافه می‌شود و در پاکت «قرض / امانت» می‌نشیند — نه در خرج یا درآمد ماه. حساب تسویه را موقع تسویه جدا انتخاب می‌کنی (می‌تواند فرق کند).')}</div>
     </div>
     <div class="field"><label id="dAmountLbl">${tr('مبلغ')} (${curName(acc ? acc.currency : baseCur())})</label>
@@ -389,10 +397,20 @@ export function delDebt(id) {
   });
 }
 
+// حسابِ پیش‌فرض شیت تسویه: آخرین پرداختی که حساب داشته، وگرنه حسابِ خودِ مورد
+function settlePreselect(d) {
+  const withAcc = (d.payments || []).filter((p) => p.accountId && accountById(p.accountId));
+  if (withAcc.length) return withAcc[withAcc.length - 1].accountId;
+  return (d.accountId && accountById(d.accountId) ? d.accountId : '') || '';
+}
+
+let settlingDebtId = null;
+
 // شیت تسویه: مبلغ (پیش‌فرض مانده)، حساب دریافت/پرداخت، تاریخ
 export function settleDebt(id) {
   const d = allDebts().find((x) => x.id === id);
   if (!d) return;
+  settlingDebtId = id;
   const lent = d.kind === 'in';
   const remain = debtRemaining(d);
   const cur = debtCurrency(d);
@@ -418,14 +436,53 @@ export function settleDebt(id) {
       <div class="stat"><div class="lbl">${tr('مانده')}</div><div class="val ${remain > 0 ? 'red' : 'green'}">${fmt(remain)}</div></div>
     </div>
     ${remain > 0 ? `
-    <div class="field"><label>${tr('مبلغ')} (${esc(curName(cur))})</label>
-      <input class="input" id="spAmount" type="number" step="any" inputmode="decimal" value="${remain}"></div>
+    <div class="field"><label>${tr('مبلغ این پرداخت')} (${esc(curName(cur))}) ${infoTip(tr('لازم نیست همهٔ مانده را یک‌جا بدهی؛ هر مبلغی بنویسی، بقیه سر جایش می‌ماند و دفعهٔ بعد ادامه می‌دهی.'))}</label>
+      <input class="input" id="spAmount" type="number" step="any" inputmode="decimal" value="${remain}" onfocus="this.select()" oninput="debtPayPreview()">
+      <div class="chips" style="margin-top:8px">
+        <button type="button" class="chip" onclick="setSpAmount('${remain}')">${tr('همهٔ مانده')} · ${esc(fmtShort(remain))}</button>
+        <button type="button" class="chip" onclick="setSpAmount('${Math.round((remain / 2) * 100) / 100}')">${tr('نصف مانده')} · ${esc(fmtShort(remain / 2))}</button>
+        <button type="button" class="chip" onclick="setSpAmount('')">${icon('edit')} ${tr('مبلغ دلخواه')}</button>
+      </div>
+      <div class="hint" id="spHint" style="margin-top:8px">${tr('ماندهٔ فعلی: {r} — کمتر از این هم می‌شود داد.', { r: esc(fmt(remain)) })}</div></div>
     <div class="field"><label>${lent ? tr('به کدام حساب برگشت؟') : tr('از کدام حساب پرداخت شد؟')} ${infoTip(tr('می‌تواند با حساب اولیه فرق کند؛ مثلاً از ملت قرض داده‌ای و به ملی برگشته.'))}</label>
-      <select class="input" id="spAcc"><option value="">— ${tr('بدون اتصال به حساب —')}</option>${accountOptGroups(d.accountId || '')}</select></div>
+      ${apickHtml({ id: 'spAcc', selected: settlePreselect(d), allowNone: true, noneLabel: tr('بدون اتصال به حساب'), title: lent ? tr('به کدام حساب برگشت؟') : tr('از کدام حساب پرداخت شد؟') })}</div>
     <div class="field"><label>${tr('تاریخ')}</label><input class="input" id="spDate" type="date" value="${todayISO()}"></div>
     <button class="btn primary block" onclick="addDebtPayment('${d.id}')">${icon('check')} ${tr('ثبت')} ${lent ? tr('دریافت') : tr('پرداخت')}</button>` : ('<div class="hint" style="margin-bottom:12px;color:var(--green)">' + tr('کامل تسویه شده.') + '</div>')}
     ${hist ? `<div class="divider"></div><h3 class="muted" style="margin-bottom:8px">${tr('پرداخت‌ها')}</h3>${hist}` : ''}
   `);
+  debtPayPreview();
+}
+
+// چیپس‌های مبلغِ سریع: همهٔ مانده / نصف / پاک کردن
+export function setSpAmount(v) {
+  const el = document.getElementById('spAmount');
+  if (!el) return;
+  el.value = v === '' || v == null ? '' : String(v);
+  if (v === '' || v == null) { try { el.focus(); } catch (e) {} }
+  debtPayPreview();
+}
+
+// «بعد از این پرداخت چقدر می‌ماند؟» — همان لحظه که تایپ می‌کنی، نه بعد از زدن دکمه
+export function debtPayPreview() {
+  const el = document.getElementById('spAmount');
+  const box = document.getElementById('spHint');
+  const d = allDebts().find((x) => x.id === settlingDebtId);
+  if (!el || !box || !d) return;
+  const remain = debtRemaining(d);
+  const cur = debtCurrency(d);
+  const v = parseFloat(el.value) || 0;
+  if (!v) {
+    box.innerHTML = tr('مبلغ این پرداخت را بنویس؛ می‌تواند کمتر از مانده باشد.');
+    return;
+  }
+  if (v > remain + 1e-6) {
+    box.innerHTML = `<span style="color:var(--red)">${tr('از مانده بیشتر است؛ حداکثر')} <b>${esc(fmt(remain))}</b> ${esc(curName(cur))}</span>`;
+    return;
+  }
+  const left = remain - v;
+  box.innerHTML = left <= 1e-6
+    ? `<span style="color:var(--green)">${tr('با این پرداخت کامل تسویه می‌شود.')} ✓</span>`
+    : tr('بعد از این پرداخت، {l} {c} مانده می‌ماند.', { l: '<b>' + esc(fmt(left)) + '</b>', c: esc(curName(cur)) });
 }
 
 export function addDebtPayment(id) {
@@ -433,7 +490,10 @@ export function addDebtPayment(id) {
   if (!d) return;
   const amount = parseFloat(document.getElementById('spAmount').value);
   if (!amount || amount <= 0) return toast(tr('مبلغ را درست وارد کن'));
-  if (amount > debtRemaining(d) + 0.000001) return toast(tr('بیشتر از مانده است'));
+  if (amount > debtRemaining(d) + 0.000001) {
+    debtPayPreview();
+    return toast(tr('از مانده بیشتر است؛ ماندهٔ فعلی {r} — اگر می‌خواهی کمتر بدهی، مبلغ را کامل پاک کن و عدد دلخواه را بنویس.', { r: fmt(debtRemaining(d)) }));
+  }
   d.payments.push({
     id: uid(),
     amount,

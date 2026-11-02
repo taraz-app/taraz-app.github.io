@@ -43,7 +43,10 @@ import {
   openDebtRemind,
   debtPickContact,
   sendDebtRemind,
+  setSpAmount,
+  debtPayPreview,
 } from './debts.js';
+import { apickChoose, openAcctSheet, apickQuery, apickPaint } from './acctpick.js';
 import { initReminders, checkReminders, openRemindSettings, remindSetDays, remindSetHour, remindEnable, remindExportCal } from './remind.js';
 import {
   applyTheme,
@@ -504,6 +507,12 @@ Object.assign(window, {
   openDebtRemind,
   debtPickContact,
   sendDebtRemind,
+  setSpAmount,
+  debtPayPreview,
+  apickChoose,
+  openAcctSheet,
+  apickQuery,
+  apickPaint,
   openRemindSettings,
   remindSetDays,
   remindSetHour,

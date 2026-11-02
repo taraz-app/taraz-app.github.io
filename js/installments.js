@@ -12,8 +12,9 @@ import { fmtDate, monthOfISO, toJalali, toGregorian, monthLabel, curMonthKey } f
 import { addBookMonths } from './jalali.js';
 import { closeModal, openModal, askConfirm } from './modal.js';
 import { render } from './view.js';
-import { save, state, accountById, accountOptGroups, CATS, LOAN_CAT, baseCur, curName } from './state.js';
+import { save, state, accountById, CATS, LOAN_CAT, baseCur, curName } from './state.js';
 import { t as tr } from './i18n.js';
+import { apickHtml } from './acctpick.js';
 import { subChipsHtml } from './subs.js';
 import { pickSub } from './subsui.js';
 
@@ -260,14 +261,14 @@ export function openPlanForm(p) {
           <input class="input" id="plStart" type="date" value="${p ? p.startISO : todayISO()}" onchange="plStartChanged(this.value)"></div>
       </div>
       <div class="field"><label>${tr('واریز اصل وام به حساب')} ${infoTip(tr('فقط اگر همین الان وام گرفته‌ای و هنوز موجودی‌اش را در حساب وارد نکرده‌ای، حساب را انتخاب کن. برای وام‌های قدیمی که پولش الان در حساب‌هایت هست «ثبت نشود» بماند وگرنه دوبار حساب می‌شود.'))}</label>
-        <select class="input" id="plDisburseAcc" onchange="plRecalc()"><option value="" ${!p || !p.disburseAccountId ? 'selected' : ''}>${tr('ثبت نشود — پول قبلاً در حسابم هست')}</option>${accountOptGroups(p ? p.disburseAccountId : '')}</select>
+        ${apickHtml({ id: 'plDisburseAcc', selected: (p && p.disburseAccountId) || '', allowNone: true, noneLabel: tr('ثبت نشود — پول قبلاً در حسابم هست'), onchange: 'plRecalc()', title: tr('واریز اصل وام به کدام حساب؟') })}
         <div class="hint" id="plDisburseHint" style="margin-top:6px;display:none"></div>
       </div>
     </div>
 
     <div class="field"><label>${tr('هر قسط از کدام حساب و پاکت؟')} ${infoTip(tr('پرداخت قسط خرجِ واقعی ماه است و از بودجهٔ همان پاکت کم می‌شود.'))}</label>
       <div class="row">
-        <select class="input col" id="plAcc">${accountOptGroups(acc)}</select>
+        ${apickHtml({ id: 'plAcc', selected: acc, compact: true, wrapClass: 'col', title: tr('هر قسط از کدام حساب؟') })}
         <select class="input col" id="plCat" onchange="plCatChanged()">${catOptions(p ? (p.badDebt ? 'invest:bad' : p.cat) : '')}</select>
       </div>
       <div id="plSubWrap" style="margin-top:8px">${p && p.cat ? subChipsHtml(p.cat, p.sub || '', 'plPickSub') : ''}</div>
@@ -581,7 +582,7 @@ export function openPayRow(planId, rowId) {
     <h2>${rowLabel(p, r)}</h2>
     <div class="stat" style="margin-bottom:12px"><div class="lbl">${tr('مبلغ پرداخت')}</div><div class="val">${fmt(rowTotal(r))} <span class="small muted">${curName(baseCur())}</span></div>
       ${r.interest || r.penalty ? `<div class="sub">${tr('اصل')} ${fmt(r.amount)}${r.interest ? (' + ' + tr('سود') + ' ') + fmt(r.interest) : ''}${r.penalty ? (' + ' + tr('جریمه') + ' ') + fmt(r.penalty) : ''}</div>` : ''}</div>
-    <div class="field"><label>${tr('از کدام حساب؟')}</label><select class="input" id="prAcc">${accountOptGroups(acc)}</select></div>
+    <div class="field"><label>${tr('از کدام حساب؟')}</label>${apickHtml({ id: 'prAcc', selected: acc, compact: true })}</div>
     <div class="field"><label>${tr('تاریخ پرداخت')}</label><input class="input" id="prDate" type="date" value="${todayISO()}"></div>
     <div class="field"><label>${tr('جریمهٔ دیرکرد (اختیاری)')}</label><input class="input" id="prPenalty" type="number" inputmode="numeric" value="${r.penalty || ''}" placeholder="0"></div>
     <div class="field"><label>${tr('مبلغ پرداختی')} ${infoTip(tr('اگر کمتر از کل قسط بنویسی، همین مقدار پرداخت‌شده ثبت می‌شود و باقی‌مانده به‌عنوان ردیفی جدا با همان سررسید می‌ماند تا بعداً بپردازی.'))}</label><input class="input" id="prAmount" type="number" inputmode="numeric" value="${rowTotal(r)}"></div>
@@ -634,7 +635,7 @@ export function openRowEdit(planId, rowId) {
     </div>
     <div class="field"><label>${tr('سررسید')}</label><input class="input" id="rwDue" type="date" value="${r ? r.dueISO : todayISO()}"></div>
     <div class="field"><label>${tr('تاریخ پرداخت (خالی = پرداخت نشده)')}</label><input class="input" id="rwPaid" type="date" value="${r && r.paidISO ? r.paidISO : ''}"></div>
-    <div class="field"><label>${tr('حساب پرداخت')}</label><select class="input" id="rwAcc">${accountOptGroups(r ? r.accountId || p.accountId : p.accountId)}</select></div>
+    <div class="field"><label>${tr('حساب پرداخت')}</label>${apickHtml({ id: 'rwAcc', selected: (r ? r.accountId || p.accountId : p.accountId) || '', compact: true })}</div>
     <button class="btn primary block" onclick="saveRow('${planId}','${r ? r.id : ''}')">${tr('ذخیره')}</button>
     ${r ? `<button class="btn danger block" style="margin-top:8px" onclick="delRow('${planId}','${r.id}')">${tr('حذف این ردیف')}</button>` : ''}
   `);
