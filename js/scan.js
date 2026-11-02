@@ -222,10 +222,9 @@ function parseModelJson(text) {
 function genBody(prompt, b64, jsonMode) {
   const generationConfig = { temperature: 0.1 };
   if (jsonMode) generationConfig.responseMimeType = 'application/json';
-  return JSON.stringify({
-    contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: 'image/jpeg', data: b64 } }] }],
-    generationConfig,
-  });
+  const parts = [{ text: prompt }];
+  if (b64) parts.push({ inlineData: { mimeType: 'image/jpeg', data: b64 } }); // ورودیِ متنی عکس ندارد
+  return JSON.stringify({ contents: [{ parts }], generationConfig });
 }
 async function directGenerate(model, key, prompt, b64, jsonMode) {
   const url = GAPI_ROOT + '/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
@@ -346,8 +345,6 @@ export function lastJpegB64() {
   return lastB64;
 }
 async function readWithGemini(file, prompt, opts) {
-  const key = getGeminiKey();
-  if (!key) throw new Error('NO_KEY');
   let b64 = await fileToJpeg(file, opts && opts.max, opts && opts.quality);
   // سقفِ بدنهٔ ورسل ۴٫۵MB و سخت است (۴۱۳ پیش از اجرای تابع). عکسِ سنگین را یک بار
   // کوچک‌تر فشرده می‌کنیم تا مسیرِ پل هم وقتی مسیر مستقیم بسته است کار کند.
@@ -358,6 +355,13 @@ async function readWithGemini(file, prompt, opts) {
     } catch (e) {}
   }
   lastB64 = b64;
+  return runGemini(prompt, b64, opts);
+}
+
+// همان مسیرِ عکس (پینگِ مسیر مستقیم/پل، لیستِ مدل‌ها، تلاش تا ۶ مدل) برای ورودیِ متنی هم استفاده می‌شود
+async function runGemini(prompt, b64, opts) {
+  const key = getGeminiKey();
+  if (!key) throw new Error('NO_KEY');
   let models = MODELS.slice();
   const cachedList = readModelsCache();
   if (cachedList && cachedList.length) {
@@ -411,7 +415,7 @@ async function readWithGemini(file, prompt, opts) {
       if (!skip && lastErr.status) break;
     }
   }
-  throw new Error(shortErr(lastErr || new Error('خواندن عکس نشد')));
+  throw new Error(shortErr(lastErr || new Error(b64 ? 'خواندن عکس نشد' : 'خواندن متن نشد')));
 }
 
 // خواندن یکپارچه: مدل اول نوع عکس را تشخیص می‌دهد (فاکتور فروشگاهی یا لیست چند تراکنش) و بعد همان را می‌خواند
@@ -442,6 +446,42 @@ export async function readAnyImage(file, accountNames) {
   const data = normalizeScan(raw.invoice || raw);
   if (data && data.lines.length) return { kind: 'invoice', invoice: data };
   throw new Error('در عکس تراکنش یا فاکتوری پیدا نشد');
+}
+
+// پیامکِ بانک قالبِ منظمی دارد؛ قاعده‌ها را صریح می‌گوییم تا مبلغ/واحد/مانده قاطی نشود
+function smsPrompt(accountNames) {
+  const accts = (accountNames || []).filter(Boolean).join('، ') || 'نامشخص';
+  return `این متنِ یک یا چند پیامک یا اعلان بانکی فارسی است. هر پیامک را به یک تراکنش تبدیل کن.
+فقط JSON معتبر برگردان.
+
+قاعده‌ها:
+- «مانده» و «موجودی» تراکنش نیستند؛ فقط مبلغِ خودِ تراکنش را بردار.
+- پیامکِ غیرمالی را نادیده بگیر: رمز پویا/یکبارمصرف، کد تایید، تبلیغ، تراکنشِ ناموفق یا لغوشده، اطلاعیهٔ موجودی.
+- اگر چند پیامک پشت هم چسبیده‌اند، برای هر کدام یک ردیفِ جدا بده.
+- واحدِ پول خیلی مهم است:
+  - اگر «ریال» نوشته شده، عددِ خام را در bankRial بگذار (تقسیم نکن؛ برنامه خودش تقسیم بر ۱۰ می‌کند).
+  - اگر «تومان»/«تومن»/«هزار تومان» نوشته شده، مبلغِ تومان را در writtenToman بگذار.
+  - اگر واحد نوشته نشده، بانک‌های ایران ریال می‌نویسند → bankRial.
+- type: برداشت/خرید/پرداخت/کسر/انتقال به/قبض/شارژ/کارمزد/جریمه/قسط = out ؛ واریز/افزایش/دریافت/برگشت/بستانکار شد/سود/حقوق/یارانه = in
+- note: شرحِ کوتاه و فارسی مثل «خرید از فروشگاه رفاه»، «قبض برق»، «انتقال به علی»، «حقوق». نام فروشگاه یا طرف حساب را داخل note بگذار، نه در فیلد دیگری.
+- account: نام بانک یا ۴ رقم آخرِ حساب/کارتِ همان پیامک (مثلاً «ملت 4321»). حساب‌های موجود: ${accts}
+- date: تاریخِ همان پیامک؛ شمسی به شکل 1405/06/17 (اگر میلادی بود همان میلادی). اگر تاریخ نداشت null.
+- time: ساعتِ ۲۴ساعته HH:MM اگر در پیامک بود، وگرنه null.
+- cat فقط وقتی type=out است: قبض/خورد/نان/بنزین/شارژ/اجاره/دارو/بیمه = need ، سهام/بورس/طلا/ارز/سپرده/صندوق = invest ، رستوران/کافه/سینما/سفر/بازی = fun ، هدیه/کمک/خیریه/نذری = charity ، جریمه/دیرکرد/کارمزد = waste
+- kind همیشه "simple" و lines خالی. qty و unit هم صفر و خالی.
+
+شکل JSON:
+{"transactions":[{"type":"out","kind":"simple","note":"خرید از فروشگاه رفاه","account":"ملت 4321","date":"1405/05/20","time":null,"cat":"need","qty":0,"unit":"","writtenToman":0,"bankRial":500000,"store":"","lines":[]}]}`;
+}
+
+// متنِ پیامک → ردیف‌های تراکنش (دقیقاً همان خروجیِ عکسِ لیست، پس همان صفحهٔ بازبینی)
+export async function readSmsText(text, accountNames) {
+  const t = String(text || '').trim();
+  if (!t) throw new Error('متنی برای خواندن نیست');
+  const raw = await runGemini(smsPrompt(accountNames), null, { jsonMode: true });
+  const list = normalizePaper(raw);
+  if (!list.length) throw new Error('در متن تراکنشی پیدا نشد');
+  return list;
 }
 
 export async function readInvoiceImage(file) {

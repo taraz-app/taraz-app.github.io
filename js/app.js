@@ -174,6 +174,11 @@ import {
   startScan,
   onScanPhoto,
   rescanAs,
+  openScanText,
+  submitScanText,
+  pasteScanText,
+  scanTxtHint,
+  scanTxtClear,
   setPaperType,
   setPaperCat,
   removePaperRow,
@@ -451,6 +456,11 @@ Object.assign(window, {
   startScan,
   onScanPhoto,
   rescanAs,
+  openScanText,
+  submitScanText,
+  pasteScanText,
+  scanTxtHint,
+  scanTxtClear,
   setPaperType,
   setPaperCat,
   removePaperRow,
@@ -678,7 +688,7 @@ paintShellIcons();
     scrim.hidden = !open;
   };
   sc.onclick = () => window.setScanMenu(!sheet.classList.contains('show'));
-  const items = { scCam: { ic: 'camera', kind: 'cam' }, scGal: { ic: 'image', kind: 'gal' } };
+  const items = { scCam: { ic: 'camera', kind: 'cam' }, scGal: { ic: 'image', kind: 'gal' }, scTxt: { ic: 'doc', kind: 'txt' } };
   Object.entries(items).forEach(([id, it]) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -686,6 +696,8 @@ paintShellIcons();
     if (ic) ic.innerHTML = icon(it.ic);
     el.onclick = () => {
       window.setScanMenu(false);
+      // متنِ پیامک کلیدِ هوش مصنوعی لازم ندارد: پارسرِ محلی هم هست
+      if (it.kind === 'txt') { openScanText(); return; }
       if (!hasGeminiKey()) { toast(tr('اول در تنظیمات کلید عکس را بگذار')); return; }
       // عکس اول گرفته و خوانده می‌شود؛ فرمِ مرتبط را onScanPhoto بعد از خواندن باز می‌کند.
       // دیگر فرم را از قبل باز نمی‌کنیم: closeModal شیت را خالی نمی‌کند و حدسِ

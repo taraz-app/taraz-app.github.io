@@ -1,6 +1,7 @@
 import { esc, fmt, fmtShort, store, toast, uid, todayISO, haptic, toFa, infoTip, amountWords, pctSign, decSep, calcEval, nowHM, celebrate } from './utils.js';
 import { icon } from './icons.js';
-import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, lastJpegB64 } from './scan.js';
+import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, readSmsText, lastJpegB64 } from './scan.js';
+import { parseBankSms } from './sms.js';
 import { rememberScan, listScans, loadScan, deleteScan } from './scanhist.js';
 import { cardHtml, cardDigits, luhnOk, bankByBin, bankByName, fmtCardNo, allBanks, allExchanges } from './cards.js';
 import { apickHtml, acctVisual, acctBalText } from './acctpick.js';
@@ -292,10 +293,11 @@ export function openTxForm(tx, opts) {
       <input id="scanCam" type="file" accept="image/*" capture="environment" style="display:none" onchange="onScanPhoto(this)">
       <input id="scanGal" type="file" accept="image/*" style="display:none" onchange="onScanPhoto(this)">
       <div id="txScanRow" style="margin-bottom:12px;${type === 'in' ? 'display:none' : ''}">
-        <button type="button" class="btn block" onclick="toggleScanPick()">${icon('scan')} ${tr('خواندن از عکس')} <span class="small muted">· ${tr('فاکتور یا لیست دست‌نویس')}</span></button>
+        <button type="button" class="btn block" onclick="toggleScanPick()">${icon('scan')} ${tr('خواندن از عکس یا متن')} <span class="small muted">· ${tr('فاکتور، لیست یا پیامک بانک')}</span></button>
         <div class="row scan-pick" id="scanPick" style="display:none;margin-top:8px">
           <button type="button" class="btn sm" style="flex:1" onclick="startScan('cam')">${icon('camera')} ${tr('دوربین')}</button>
           <button type="button" class="btn sm" style="flex:1" onclick="startScan('gal')">${icon('folder')} ${tr('گالری')}</button>
+          <button type="button" class="btn sm" style="flex:1" onclick="openScanText()">${icon('doc')} ${tr('متن پیامک')}</button>
         </div>
         <div id="scanHist"></div>
         <div id="scanVerdict"></div>
@@ -1027,6 +1029,98 @@ export async function rescanAs(kind) {
     toast((e && e.message) || tr('خواندن عکس نشد'));
   }
 }
+// ── ورودیِ متنی: پیامک‌های بانک را کپی کن، همان لیستِ قابلِ ویرایشِ عکس را تحویل بگیر ──
+let lastScanText = '';
+
+export function openScanText(prefill) {
+  const keyOk = hasGeminiKey();
+  openModal(`
+    <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
+    <h2>${tr('پیامک‌های بانک را بچسبان')}</h2>
+    <p class="small muted" style="margin:-2px 0 10px">${tr('چند پیامک را پشت هم کپی کن (هر پیامک یک خط). هر کدام یک ردیفِ قابلِ ویرایش می‌شود — درست مثلِ وقتی که عکس می‌گیری.')}</p>
+    <textarea class="input" id="scanTxt" rows="8" placeholder="${tr('برداشت 1,500,000 ریال از حساب 6395-****-1234 در 1405/06/17 ساعت 14:35 مانده 12,000,000 ریال')}" oninput="scanTxtHint()">${esc(prefill || lastScanText || '')}</textarea>
+    <div class="chips" style="margin-top:8px">
+      <button type="button" class="chip" onclick="pasteScanText()">${icon('copy')} ${tr('از کلیپ‌بورد')}</button>
+      <button type="button" class="chip" onclick="scanTxtClear()">${icon('trash')} ${tr('پاک کردن')}</button>
+    </div>
+    <div class="hint" id="scanTxtHint" style="margin:10px 0 12px">${keyOk ? tr('با هوش مصنوعی خوانده می‌شود؛ اگر اینترنت یا کلید نرسد، پارسرِ محلیِ برنامه امتحان می‌شود.') : tr('کلیدِ هوش مصنوعی نداری؛ با پارسرِ محلیِ برنامه خوانده می‌شود (بدون اینترنت هم کار می‌کند).')}</div>
+    <button class="btn primary block" onclick="submitScanText()">${icon('scan')} ${tr('خواندن و ساخت لیست')}</button>
+  `);
+  const el = document.getElementById('scanTxt');
+  if (el) setTimeout(() => { try { el.focus(); } catch (e) {} }, 90);
+}
+
+// همان لحظه که تایپ می‌کنی بگوییم چند تراکنش دیده شد
+export function scanTxtHint() {
+  const el = document.getElementById('scanTxt');
+  const box = document.getElementById('scanTxtHint');
+  if (!el || !box) return;
+  const txt = String(el.value || '').trim();
+  if (!txt) {
+    box.innerHTML = hasGeminiKey() ? tr('با هوش مصنوعی خوانده می‌شود؛ اگر اینترنت یا کلید نرسد، پارسرِ محلیِ برنامه امتحان می‌شود.') : tr('کلیدِ هوش مصنوعی نداری؛ با پارسرِ محلیِ برنامه خوانده می‌شود (بدون اینترنت هم کار می‌کند).');
+    return;
+  }
+  const n = parseBankSms(txt).length;
+  box.innerHTML = n
+    ? tr('{n} تراکنش در متن دیده شد.', { n: toFa(n) })
+    : tr('پارسرِ محلی چیزی پیدا نکرد؛ اگر پیامک بانکی است، هوش مصنوعی ممکن است بتواند بخواند.');
+}
+
+export function scanTxtClear() {
+  const el = document.getElementById('scanTxt');
+  if (el) { el.value = ''; scanTxtHint(); try { el.focus(); } catch (e) {} }
+  lastScanText = '';
+}
+
+export async function pasteScanText() {
+  const el = document.getElementById('scanTxt');
+  if (!el) return;
+  try {
+    const txt = (await navigator.clipboard.readText()) || '';
+    if (!txt.trim()) { toast(tr('کلیپ‌بورد خالی است')); return; }
+    el.value = (el.value.trim() ? el.value.replace(/\s+$/, '') + '\n' : '') + txt.trim();
+    scanTxtHint();
+    haptic(4);
+  } catch (e) {
+    toast(tr('مرورگر اجازهٔ خواندنِ کلیپ‌بورد نداد؛ داخل کادر بچسبان'));
+  }
+}
+
+function acceptTextRows(rows, how) {
+  applyPaperRows(rows);
+  openPaperReview();
+  toast(how === 'local'
+    ? tr('{n} تراکنش از متن خوانده شد — ویرایش کن و ثبت کن', { n: toFa(rows.length) })
+    : tr('{n} تراکنش خوانده شد — قبل از ثبت چک کن', { n: toFa(rows.length) }));
+}
+
+export async function submitScanText() {
+  const el = document.getElementById('scanTxt');
+  const text = String((el && el.value) || '').trim();
+  if (!text) { toast(tr('اول متن پیامک را بچسبان')); haptic(30); return; }
+  lastScanText = text;
+  const accts = activeAccounts().map((a) => a.name);
+  if (hasGeminiKey()) {
+    toast(tr('در حال خواندن متن…'));
+    try {
+      const rows = await readSmsText(text, accts);
+      rememberScan({ kind: 'list', list: rows }, '', null);
+      acceptTextRows(rows, 'ai');
+      return;
+    } catch (e) {
+      if (!(e && e.message === 'NO_KEY')) {
+        const local = parseBankSms(text);
+        if (local.length) { acceptTextRows(local, 'local'); return; }
+        toast((e && e.message) || tr('خواندن متن نشد'));
+        return;
+      }
+    }
+  }
+  const local = parseBankSms(text);
+  if (!local.length) { toast(tr('در این متن تراکنشی پیدا نشد')); haptic(30); return; }
+  acceptTextRows(local, 'local');
+}
+
 function applyPaperRows(rows) {
   paperDraft = rows.map((r) => ({
     id: uid(),

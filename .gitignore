@@ -1,2 +1,3 @@
 .smoke/
-.harness/
+tools/harness/node_modules/
+tools/harness/package-lock.json

@@ -24,6 +24,7 @@ It is designed around the **envelope (“pocket”) method** — every month’s
 - **Transfers** between accounts, including cross‑currency transfers with a per‑transfer rate.
 - Swipe a row to delete or edit, long‑press to repeat; “what if you hadn’t spent this?” reflection note for Waste items.
 - **Photo import** (optional, uses your own Google Gemini API key): photograph a handwritten list or a receipt and get transactions/invoice lines pre‑filled for review.
+- **Bank SMS import**: paste several bank SMS messages (or pull them from the clipboard) and each one becomes an editable row in the same review screen the photo flow uses. With a Gemini key the AI reads the text; without a key — or if the call fails — the built‑in local parser handles it (rial→toman, bank name and card last‑4, Jalali dates).
 - Per‑account ledger with running balance; per‑pocket ledger per month.
 
 ### Report
@@ -93,6 +94,7 @@ python3 -m http.server 8080
 | `js/crypto.js`, `js/securestore.js` | Encryption and key management |
 | `js/sync.js` | Google sign‑in and Drive sync |
 | `js/scan.js` | Photo import via Gemini |
+| `js/sms.js` | Local parser for bank SMS text input |
 | `js/jalali.js` | Jalali ↔ Gregorian conversion and formatting |
 | `js/utils.js` | Formatting, money inputs, storage helpers |
 | `sw.js`, `manifest.webmanifest` | Offline cache and install metadata |
@@ -108,7 +110,7 @@ All amounts are stored in the account’s own currency; the base currency is use
 
 ## Version
 
-Current: `2.38.29` (root) / `2.38.29-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+Current: `2.38.30` (root) / `2.38.30-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
 
 ## License
 

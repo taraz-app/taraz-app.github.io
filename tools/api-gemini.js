@@ -46,20 +46,14 @@ export default async function handler(req, res) {
       url = GAPI + '/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(key);
       const generationConfig = { temperature: 0.1 };
       if (b.jsonMode) generationConfig.responseMimeType = 'application/json';
+      // ورودیِ متنی (پیامکِ بانک) عکس ندارد؛ part خالی باعث ۴۰۰ می‌شود
+      const parts = [{ text: String(b.prompt || '') }];
+      const img = String(b.imageB64 || '');
+      if (img) parts.push({ inlineData: { mimeType: 'image/jpeg', data: img } });
       init = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: String(b.prompt || '') },
-                { inlineData: { mimeType: 'image/jpeg', data: String(b.imageB64 || '') } },
-              ],
-            },
-          ],
-          generationConfig,
-        }),
+        body: JSON.stringify({ contents: [{ parts }], generationConfig }),
       };
     }
     const ctl = new AbortController();
