@@ -2013,9 +2013,9 @@ export function acctCardPreview() {
 // می‌شود، و اگر مرورگر آن را نداشت کاربر ۱۶ رقم را می‌نویسد؛ بانک از ۶ رقمِ اول
 // (BIN) و اعتبارِ شماره با الگوریتمِ لون بررسی می‌شود. هوش مصنوعی فقط وقتی کلید باشد.
 function cardReaderNote() {
-  if (textDetectorOk()) return tr('خواندنِ عکس روی خودِ گوشی و بدون اینترنت انجام می‌شود.');
-  if (hasGeminiKey()) return tr('خواندنِ عکس با کلیدِ هوش مصنوعی انجام می‌شود.');
-  return tr('این مرورگر خواندنِ خودکارِ عکس را ندارد؛ ۱۶ رقم را بنویس تا بانک و ۴ رقمِ آخر خودکار پر شود.');
+  if (textDetectorOk()) return tr('عکسِ کارت روی خودِ گوشی خوانده می‌شود.');
+  if (hasGeminiKey()) return tr('عکسِ کارت با کلیدِ هوش مصنوعی خوانده می‌شود.');
+  return tr('برای خواندنِ خودکارِ عکس، در تنظیمات کلید بگذار؛ یا ۱۶ رقم را بنویس تا بانک و ۴ رقمِ آخر خودکار پر شود.');
 }
 
 export function openCardScan(msg, prefill) {
@@ -2023,7 +2023,7 @@ export function openCardScan(msg, prefill) {
   openModal(`
     <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
     <h2>${tr('کارت بانکی')}</h2>
-    <p class="small muted" style="margin:-2px 0 12px">${tr('شمارهٔ ۱۶ رقمی را از عکسِ کارت بخوان یا بنویس؛ بانک را از ۶ رقمِ اول تشخیص می‌دهم و شماره را با الگوریتمِ لون چک می‌کنم.')}</p>
+    <p class="small muted" style="margin:-2px 0 12px">${tr('عکسِ کارت را بگیر یا شمارهٔ ۱۶ رقمی را بنویس؛ بانک و ۴ رقمِ آخر خودکار پر می‌شود.')}</p>
     <div class="row" style="gap:8px;margin-bottom:12px">
       <button type="button" class="btn block" style="flex:1" onclick="startCardCapture('cam')">${icon('camera')} ${tr('عکس از کارت')}</button>
       <button type="button" class="btn block" style="flex:1" onclick="startCardCapture('gal')">${icon('image')} ${tr('از گالری')}</button>
@@ -2062,7 +2062,7 @@ export async function onCardPhoto(inp) {
     res = await readCardImage(file);
   } catch (e) {
     const msg = (e && e.code === 'NO_CARD_READER')
-      ? tr('خواندنِ خودکارِ عکس روی این گوشی نیست؛ شماره را بنویس')
+      ? tr('شماره از عکس خوانده نشد؛ ۱۶ رقم را بنویس')
       : ((e && e.message) || tr('شماره از عکس خوانده نشد'));
     // داخلِ فرمِ حساب فقط پیام می‌دهیم؛ شیتِ کارت را روی فرم باز نمی‌کنیم
     if (accountFormOpen()) { toast(msg); return; }

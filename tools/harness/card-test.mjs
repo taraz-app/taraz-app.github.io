@@ -58,6 +58,7 @@ await app.wait(30);
 check('با ضربه روی «کارت بانکی» شیت باز شد', app.overlayOpen() && !!$('cardKp'), app.sheetHtml().slice(0, 80));
 check('دو راهِ عکس دارد (دوربین و گالری)', /startCardCapture\('cam'\)/.test(app.sheetHtml()) && /startCardCapture\('gal'\)/.test(app.sheetHtml()));
 check('بدون کلید، راهِ تایپ را توضیح می‌دهد', /۱۶ رقم را بنویس/.test(app.sheetHtml()), app.sheetHtml().slice(-200));
+check('نامِ الگوریتم/فناوری به کاربر نشان داده نمی‌شود', !/لون|Luhn|BIN|OCR|TextDetector|Shape Detection|۶ رقمِ اول|شش رقم/.test(app.sheetHtml()), (app.sheetHtml().match(/لون|Luhn|BIN|OCR|TextDetector|۶ رقمِ اول/) || ['-'])[0]);
 check('کلیدِ هوش مصنوعی لازم ندارد', !/کلید عکس را بگذار/.test(app.toasts().join(' ')));
 
 $('cardKp').value = MELLI;
@@ -69,12 +70,12 @@ check('پیش‌نمایشِ کارتِ رنگی ساخته شد', !!doc.querySe
 
 $('cardKp').value = BAD;
 window.cardKpInput($('cardKp'));
-check('شمارهٔ نامعتبر هشدارِ لون می‌گیرد', /معتبر به نظر نمی‌رسد/.test($('cardKpHint').textContent), $('cardKpHint').textContent);
+check('شمارهٔ نامعتبر هشدار می‌گیرد', /معتبر به نظر نمی‌رسد/.test($('cardKpHint').textContent), $('cardKpHint').textContent);
 check('با شمارهٔ نامعتبر حساب اضافه نمی‌شود', window.addAccountFromCard() === undefined && !!$('cardKp') && /معتبر به نظر نمی‌رسد/.test(app.toasts().join(' ')), app.toasts().join('|'));
 
 $('cardKp').value = '123456';
 window.cardKpInput($('cardKp'));
-check('BIN ناشناخته گفته می‌شود', /نمی‌شناسم/.test($('cardKpHint').textContent), $('cardKpHint').textContent);
+check('بانکِ ناشناخته به کاربر گفته می‌شود', /نمی‌شناسم/.test($('cardKpHint').textContent), $('cardKpHint').textContent);
 check('کمتر از ۱۶ رقم حساب نمی‌سازد', !!$('cardKp') && (window.addAccountFromCard(), /۱۶ رقم/.test(app.toasts().join(' '))), app.toasts().join('|'));
 
 // ── ۵. شمارهٔ درست → فرمِ حسابِ پیش‌پرشده ──────────────────────────────
@@ -89,6 +90,7 @@ check('بانک از BIN در فرم پر شد', ($('aBank') || {}).value === '�
 check('نوعِ حساب «کارت بانکی» شد', ($('aType') || {}).value === 'کارت بانکی', ($('aType') || {}).value);
 check('نامِ پیشنهادی ساخته شد', /بلوبانک/.test(($('aName') || {}).value), ($('aName') || {}).value);
 check('فرمِ حساب هم دکمهٔ اسکن دارد', /startCardCapture\('cam'\)/.test(app.sheetHtml()) && /startCardCapture\('gal'\)/.test(app.sheetHtml()));
+check('فرمِ حساب هم نامِ الگوریتم نمی‌آورد', !/لون|Luhn|BIN/.test(app.sheetHtml()));
 check('پیش‌نمایشِ کارت در فرم هست', !!doc.querySelector('#aCardPreview .bcard'));
 window.saveAccount();
 await app.wait(40);
