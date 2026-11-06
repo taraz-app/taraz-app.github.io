@@ -928,7 +928,25 @@ export default {
   'به سرور همگام‌سازی نرسیدم؛ اینترنت یا فیلتر شبکه (DNS/آنتی‌ویروس) را چک کن.': 'Could not reach the sync server; check your internet or network filter (DNS/antivirus).',
   'آزمایش: {u}': 'Test: {u}',
 
-  // ── اسکنِ کارتِ بانکی (عکس یا تایپ) ──
+  // ── اتصالِ هوش مصنوعی (دو مسیر: گوگلِ مستقیم و پل) ──
+'کدام مسیر کار می‌کند؟': 'Which route works?',
+'آزمایشِ اتصال': 'Test connection',
+'آزمایشِ دوباره': 'Test again',
+'در حال آزمایشِ اتصال…': 'Testing connection…',
+'اگر هوش مصنوعی کار نکرد ولی ورود به گوگل کار می‌کند: سرویسِ هوش مصنوعیِ گوگل از بعضی منطقه‌ها و بعضی آی‌پی‌ها جواب نمی‌دهد؛ فیلترشکن را با سرورِ دیگری عوض کن.': 'If the AI fails but Google sign-in works: Google\'s AI service is unavailable in some regions and from some addresses — switch to a different VPN server.',
+'نه گوگل جواب داد نه پلِ ورسل؛ اینترنت را چک کن و در تنظیمات «آزمایشِ اتصال» را بزن': 'Neither Google nor the bridge answered; check your connection and run "Test connection" in Settings',
+'سرویسِ هوش مصنوعیِ گوگل از منطقهٔ تو و از سرورِ پل هم جواب نمی‌دهد؛ فیلترشکن را با یک کشور/سرورِ دیگر عوض کن (ورود به گوگل و همگام‌سازی با همین اینترنت کار می‌کنند)': 'Google\'s AI service rejects this from your region and from the bridge server too; switch to another VPN country/server (sign-in and sync work fine on this connection)',
+'سرویسِ هوش مصنوعیِ گوگل از این منطقه جواب نمی‌دهد؛ فیلترشکن را با یک کشور/سرورِ دیگر امتحان کن': 'Google\'s AI service doesn\'t answer from this region; try another VPN country/server',
+'هر دو مسیر کار می‌کند؛ از گوگلِ مستقیم می‌رویم.': 'Both routes work; using the direct Google route.',
+'مسیرِ مستقیم بسته است ولی پلِ ورسل کار می‌کند؛ از پل می‌رویم.': 'The direct route is closed but the bridge works; using the bridge.',
+'اول کلید را در همین بخش ذخیره کن.': 'First save your key in this section.',
+'سهمیهٔ رایگانِ کلید تمام شده؛ فردا دوباره امتحان کن.': 'The key\'s free quota is used up; try again tomorrow.',
+'کلید معتبر نیست یا اجازهٔ این کار را ندارد؛ دوباره کلید بساز و ذخیره کن.': 'The key is invalid or not allowed to do this; create and save a new one.',
+'نه گوگل جواب داد نه پلِ ورسل؛ اینترنت یا فیلترشکن را چک کن.': 'Neither Google nor the bridge answered; check your connection or VPN.',
+'مسیرِ مستقیمِ گوگل به دلیلِ منطقه بسته است و پل هم خطا داد؛ فیلترشکن را با یک کشور/سرورِ دیگر عوض کن.': 'The direct Google route is blocked by region and the bridge failed too; switch to another VPN country/server.',
+'سرویسِ هوش مصنوعیِ گوگل این درخواست را به دلیلِ منطقه رد کرد — هم از اینترنتِ تو هم از سرورِ پل. فیلترشکن را با یک کشور/سرورِ دیگر عوض کن و دوباره آزمایش کن. (ورود به گوگل و همگام‌سازی درایو این محدودیت را ندارند.)': 'Google\'s AI service rejected this request by region — from both your connection and the bridge server. Switch to another VPN country/server and test again. (Google sign-in and Drive sync have no such limit.)',
+
+// ── اسکنِ کارتِ بانکی (عکس یا تایپ) ──
   'عکس از کارت': 'Photo of card',
   'اسکن از عکس': 'Scan from photo',
   'از گالری': 'From gallery',

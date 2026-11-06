@@ -246,34 +246,43 @@ async function proxyGenerate(key, model, prompt, b64, jsonMode) {
     return null; // پل در دسترس نیست → مسیر مستقیم
   }
 }
+// از میان خطاهای دو مسیر، آنکه اطلاعاتِ بیشتری دارد (خطای واقعیِ گوگل بر نرسیدنِ مسیر)
+function bestRouteError(errs) {
+  if (!errs.length) return Object.assign(new Error('no-route'), { noRoute: true });
+  const real = errs.filter((e) => e.status);
+  const pick = real.length ? real[0] : errs[0];
+  const err = new Error(pick.message || 'خطای ' + pick.status);
+  err.status = pick.status;
+  err.route = pick.route;
+  err.errs = errs;
+  if (!real.length) err.noRoute = true;
+  // دیوارِ منطقه‌ایِ گوگل روی «آی‌پیِ خروجی» است: اگر از راهِ پل هم بخورد، یعنی گوگل
+  // آی‌پیِ سرورِ پل را هم در منطقهٔ پشتیبانی‌نشده حساب می‌کند (آی‌پی‌های اشتراکی را گاهی
+  // به منطقهٔ دیگری نسبت می‌دهد) — نه اینکه کلیدِ کاربر خراب باشد.
+  if (errs.some((x) => x.route === 'proxy' && REGION_BLOCKED.test(x.message || ''))) err.regionViaProxy = true;
+  if (errs.some((x) => x.route === 'direct' && REGION_BLOCKED.test(x.message || ''))) err.regionViaDirect = true;
+  return err;
+}
+
 async function callGemini(model, key, b64, prompt, jsonMode) {
-  // ترتیب از روی پینگ: اول مسیری که باز بود، بعد یکی یدک
+  // ترتیب از روی پینگ: اول مسیری که باز بود؛ ولی اگر جواب نداد مسیرِ دیگر هم امتحان می‌شود
   const order = (await directRouteOk()) === true ? ['direct', 'proxy'] : ['proxy', 'direct'];
+  const errs = [];
   let resp = null;
   let data = null;
   for (const route of order) {
-    resp = route === 'direct'
+    const r = route === 'direct'
       ? await directGenerate(model, key, prompt, b64, jsonMode)
       : await proxyGenerate(key, model, prompt, b64, jsonMode);
-    if (!resp) continue;
-    data = await resp.json().catch(() => ({}));
-    if (resp.ok) break;
-    // بلاکِ منطقه‌ای روی مسیر مستقیم → کشِ پینگ اصلاح شود و از پل برویم
-    if (route === 'direct' && resp.status === 403 && REGION_BLOCKED.test(String((data.error && data.error.message) || ''))) {
-      saveDirectOk(false);
-      resp = null;
-      data = null;
-      continue;
-    }
-    break; // خطای واقعی (کلید نامعتبر / سهمیه / مدل مرده) → همان را نشان بده
+    if (!r) { errs.push({ route, status: 0, message: '' }); continue; }
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) { resp = r; data = d; saveDirectOk(route === 'direct'); break; }
+    const gmsg = String((d && d.error && d.error.message) || '');
+    errs.push({ route, status: r.status, message: gmsg });
+    // مسیرِ مستقیم جواب نداد → دفعهٔ بعد اول از پل برو
+    if (route === 'direct') saveDirectOk(false);
   }
-  if (!resp) throw Object.assign(new Error('no-route'), { noRoute: true });
-  if (!resp.ok) {
-    const msg = (data.error && data.error.message) || 'خطای ' + resp.status;
-    const err = new Error(msg);
-    err.status = resp.status;
-    throw err;
-  }
+  if (!resp) throw bestRouteError(errs);
   const text =
     data.candidates &&
     data.candidates[0] &&
@@ -283,13 +292,82 @@ async function callGemini(model, key, b64, prompt, jsonMode) {
   return parseModelJson(text);
 }
 
+async function fetchTimeout(url, init, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => { try { ctl.abort(); } catch (e) {} }, ms || 8000);
+  try {
+    return await fetch(url, Object.assign({}, init, { signal: ctl.signal }));
+  } finally { clearTimeout(timer); }
+}
+
+// «آزمایشِ اتصال» در تنظیمات: دقیقاً می‌گوید کدام مسیر جواب داد و گوگل چه گفت
+export async function testGeminiConnection() {
+  const key = getGeminiKey();
+  const rep = { key: !!key, direct: null, proxy: null, models: 0, verdict: '', hint: '' };
+  if (!key) {
+    rep.verdict = 'no-key';
+    rep.hint = 'اول کلید را در همین بخش ذخیره کن.';
+    return rep;
+  }
+  // ۱) گوگلِ مستقیم با کلید (لیستِ مدل‌ها = کم‌مصرف‌ترین درخواستِ معتبر)
+  try {
+    const r = await fetchTimeout(GAPI_ROOT + '?key=' + encodeURIComponent(key), null, 8000);
+    const body = await r.text().catch(() => '');
+    rep.direct = { status: r.status, ok: !!r.ok, region: REGION_BLOCKED.test(body), body: body.slice(0, 160) };
+    if (r.ok) { try { rep.models = (JSON.parse(body).models || []).length; } catch (e) {} }
+  } catch (e) {
+    rep.direct = { status: 0, ok: false, region: false, error: String((e && e.message) || e).slice(0, 80) };
+  }
+  // ۲) پلِ ورسل با همان کلید
+  try {
+    const r = await fetchTimeout(GEMINI_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', key }),
+    }, 20000);
+    const data = await r.json().catch(() => ({}));
+    const msg = String((data && data.error && data.error.message) || '');
+    rep.proxy = { status: r.status, ok: !!r.ok, region: REGION_BLOCKED.test(msg), msg: (msg || (data && data.error ? JSON.stringify(data.error).slice(0, 120) : '')).slice(0, 160) };
+    if (r.ok && data && data.models) rep.models = Math.max(rep.models, data.models.length);
+  } catch (e) {
+    rep.proxy = { status: 0, ok: false, region: false, error: String((e && e.message) || e).slice(0, 80) };
+  }
+  saveDirectOk(!!(rep.direct && rep.direct.ok));
+  // ۳) نتیجهٔ قابلِ فهم
+  if (rep.direct.ok || rep.proxy.ok) {
+    rep.verdict = 'ok';
+    rep.hint = rep.direct.ok
+      ? 'هر دو مسیر کار می‌کند؛ از گوگلِ مستقیم می‌رویم.' + (rep.models ? ' (' + rep.models + ' مدل)' : '')
+      : 'مسیرِ مستقیم بسته است ولی پلِ ورسل کار می‌کند؛ از پل می‌رویم.' + (rep.models ? ' (' + rep.models + ' مدل)' : '');
+  } else if (rep.proxy.region || rep.direct.region) {
+    rep.verdict = 'region';
+    rep.hint = rep.proxy.region
+      ? 'سرویسِ هوش مصنوعیِ گوگل این درخواست را به دلیلِ منطقه رد کرد — هم از اینترنتِ تو هم از سرورِ پل. فیلترشکن را با یک کشور/سرورِ دیگر عوض کن و دوباره آزمایش کن. (ورود به گوگل و همگام‌سازی درایو این محدودیت را ندارند.)'
+      : 'مسیرِ مستقیمِ گوگل به دلیلِ منطقه بسته است و پل هم خطا داد؛ فیلترشکن را با یک کشور/سرورِ دیگر عوض کن.';
+  } else if ([rep.direct.status, rep.proxy.status].indexOf(429) >= 0) {
+    rep.verdict = 'quota';
+    rep.hint = 'سهمیهٔ رایگانِ کلید تمام شده؛ فردا دوباره امتحان کن.';
+  } else if ([rep.direct.status, rep.proxy.status].some((x) => x === 400 || x === 403)) {
+    rep.verdict = 'key';
+    rep.hint = 'کلید معتبر نیست یا اجازهٔ این کار را ندارد؛ دوباره کلید بساز و ذخیره کن.';
+  } else {
+    rep.verdict = 'net';
+    rep.hint = 'نه گوگل جواب داد نه پلِ ورسل؛ اینترنت یا فیلترشکن را چک کن.';
+  }
+  rep.detail = 'direct=' + (rep.direct ? rep.direct.status + (rep.direct.region ? '/region' : '') : '-') +
+    ' proxy=' + (rep.proxy ? rep.proxy.status + (rep.proxy.region ? '/region' : '') : '-') +
+    ((rep.proxy && rep.proxy.msg) ? ' :: ' + rep.proxy.msg : ((rep.proxy && rep.proxy.error) ? ' :: ' + rep.proxy.error : ''));
+  return rep;
+}
+
 function shortErr(e) {
   const raw = (e && e.message) || String(e || '');
   const s = raw.toLowerCase();
-  if (e && e.noRoute) return 'نه گوگل جواب داد نه پلِ ورسل؛ اینترنت را چک کن و دوباره امتحان کن';
+  if (e && e.noRoute) return 'نه گوگل جواب داد نه پلِ ورسل؛ اینترنت را چک کن و در تنظیمات «آزمایشِ اتصال» را بزن';
+  if (e && e.regionViaProxy) return 'سرویسِ هوش مصنوعیِ گوگل از منطقهٔ تو و از سرورِ پل هم جواب نمی‌دهد؛ فیلترشکن را با یک کشور/سرورِ دیگر عوض کن (ورود به گوگل و همگام‌سازی با همین اینترنت کار می‌کنند)';
   if (s.includes('api key') || s.includes('api_key')) return 'کلید نامعتبر است؛ در تنظیمات دوباره ذخیره کن';
   if (s.includes('quota') || s.includes('resource exhausted')) return 'سهمیه رایگان گوگل تمام شده';
-  if (REGION_BLOCKED.test(raw)) return 'گوگل از این منطقه جواب نمی‌دهد؛ با فیلترشکن یا کلیدِ بدون محدودیتِ منطقه امتحان کن';
+  if (REGION_BLOCKED.test(raw)) return 'سرویسِ هوش مصنوعیِ گوگل از این منطقه جواب نمی‌دهد؛ فیلترشکن را با یک کشور/سرورِ دیگر امتحان کن';
   if (s.includes('permission') || s.includes('403')) return 'کلید اجازه این کار را ندارد';
   if (s.includes('413') || s.includes('payload too large')) return 'عکس خیلی سنگین است؛ از نزدیک‌تر و با نور بهتر بگیر';
   if (s.includes('not found') || s.includes('supported methods') || s.includes('listmodels'))

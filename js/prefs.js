@@ -5,7 +5,7 @@ import { fmtDate, curMonthKey } from './jalali.js';
 import { t, t as tr, LANGS, langPref, lang, digitsPref, setDigitsPref } from './i18n.js';
 import { remindSummary } from './remind.js';
 import { icon, hasIcon } from './icons.js';
-import { saveGeminiKey, clearGeminiKey } from './scan.js';
+import { saveGeminiKey, clearGeminiKey, testGeminiConnection } from './scan.js';
 import { openModal, closeModal } from './modal.js';
 import { render } from './view.js';
 import { state, replaceState, save, allCurrencies, rateOf, baseCur, currencyInfo, changeBaseCurrency, CURRENCIES, curName, bookCal } from './state.js';
@@ -1193,6 +1193,8 @@ export function openSettingsScan() {
     <p class="small muted">${tr('کلید')} Google AI Studio ${tr('را این‌جا بگذار. به کسی نشان نده. عکس برای خواندن به گوگل فرستاده می‌شود.')}</p>
     <p><a class="btn block" href="${geminiHelpHref()}" target="_blank" rel="noopener">${tr('چطور کلید بگیرم؟')}</a></p>
     <label class="srow" style="cursor:pointer;margin-bottom:10px"><span class="smid"><span class="st1">${tr('نگه‌داشتن آخرین خوانده‌شده‌ها')}</span><span class="st2">${tr('۵ مورد آخر، فقط روی همین دستگاه؛ برای پر کردن دوباره بدون عکس جدید')}</span></span><input type="checkbox" ${scanHistOn() ? 'checked' : ''} onchange="setScanHistOn(this.checked)"></label>
+    <div id="aiState" class="upd-state" style="margin:10px 0">${aiStateHTML()}</div>
+    <p class="small muted">${tr('اگر هوش مصنوعی کار نکرد ولی ورود به گوگل کار می‌کند: سرویسِ هوش مصنوعیِ گوگل از بعضی منطقه‌ها و بعضی آی‌پی‌ها جواب نمی‌دهد؛ فیلترشکن را با سرورِ دیگری عوض کن.')}</p>
     ${
       has
         ? `<div class="hint" style="margin:10px 0">✅ ${tr('کلید ذخیره شده است.')}</div>
@@ -1204,6 +1206,32 @@ export function openSettingsScan() {
     }
   `);
 }
+
+// وضعیتِ اتصالِ هوش مصنوعی: هر دو مسیر (گوگلِ مستقیم و پلِ ورسل) با کلیدِ خودِ کاربر
+// امتحان می‌شوند و نتیجه صادقانه نوشته می‌شود — اینکه کدام‌یک جواب داد و گوگل چه گفت.
+function aiStateHTML() {
+  const st = window.__aiTest;
+  if (st === 'checking') return `<div class="upd busy">${tr('در حال آزمایشِ اتصال…')}</div>`;
+  if (st && st.verdict) {
+    const cls = st.verdict === 'ok' ? 'ok' : '';
+    return `<div class="upd ${cls}"><span>${st.verdict === 'ok' ? '✓ ' : ''}${esc(st.hint)}</span><button class="btn sm" onclick="testAiConnection()">${tr('آزمایشِ دوباره')}</button></div>` +
+      (st.detail ? `<div class="small muted" style="margin-top:4px;direction:ltr;text-align:left;word-break:break-all">${esc(st.detail)}</div>` : '');
+  }
+  return `<div class="upd"><span>${tr('کدام مسیر کار می‌کند؟')}</span><button class="btn sm" onclick="testAiConnection()">${tr('آزمایشِ اتصال')}</button></div>`;
+}
+export function testAiConnection() {
+  window.__aiTest = 'checking';
+  const el = document.getElementById('aiState');
+  if (el) el.innerHTML = aiStateHTML();
+  testGeminiConnection()
+    .then((rep) => { window.__aiTest = rep; })
+    .catch(() => { window.__aiTest = null; })
+    .then(() => {
+      const e2 = document.getElementById('aiState');
+      if (e2) e2.innerHTML = aiStateHTML();
+    });
+}
+if (typeof window !== 'undefined') window.testAiConnection = testAiConnection;
 
 // وضعیت به‌روزرسانی (ریل: سرویس‌ورکر؛ تست: مقایسهٔ نسخه با سرور)
 function updateStateHTML() {

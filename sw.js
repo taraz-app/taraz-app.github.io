@@ -1,4 +1,4 @@
-const CACHE = 'capital-app-v148';
+const CACHE = 'capital-app-v149';
 const ASSETS = [
   './',
   './index.html',
