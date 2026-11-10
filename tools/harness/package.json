@@ -4,7 +4,7 @@
   "type": "module",
   "description": "تست‌های DOM با jsdom برای تراز (بیرون از صفحهٔ واقعی اجرا می‌شوند)",
   "scripts": {
-    "test": "node card-test.mjs && node sms-test.mjs && node ui-test.mjs && node ai-test.mjs"
+    "test": "node card-test.mjs && node sms-test.mjs && node ui-test.mjs && node ai-test.mjs && node refund-test.mjs"
   },
   "devDependencies": { "jsdom": "^26.0.0" }
 }

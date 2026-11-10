@@ -36,7 +36,8 @@ import {
   catCeiling,
   loanFlow,
   accountCurrentToman,
-  institutionOf, baseCur, currencyInfo, curName, setTargetMonth } from './state.js';
+  institutionOf, baseCur, currencyInfo, curName, setTargetMonth,
+  isRefundTx, isReversed, refundedInTxUnit } from './state.js';
 import { reflectRow } from './reflect.js';
 import { cardHtml, bankOf, curIconHtml, exchangeOf, exchangeIconHtml } from './cards.js';
 
@@ -200,17 +201,26 @@ function txRow(t, opts = {}) {
   const inv = isInvoice(t);
   const cat = t.type === 'out' && !inv ? catById(t.cat) : null;
   const transfer = isTransfer(t);
+  // سندِ برگشتِ پول: پول برگشته، ولی درآمد نیست — با آیکن و برچسبِ خودش
+  const refund = isRefundTx(t);
+  const refundedFrom = refund ? state.transactions.find((x) => x.id === t.refundOf) : null;
+  const reversed = !refund && isReversed(t);
+  const backPart = !refund && t.type === 'out' ? refundedInTxUnit(t) : 0;
   // ردیف نمایندهٔ انتقال: مقصد و کارمزدِ متصل را هم کنارش نشان بده
   let transferTail = '';
-  if (transfer && t.type === 'transferOut' && t.pair) {
+  if (refund && refundedFrom) {
+    transferTail = ' ← ' + esc(refundedFrom.note || (isInvoice(refundedFrom) ? tr('tx.invoice') : tr('tx.expense')));
+  } else if (transfer && t.type === 'transferOut' && t.pair) {
     const inn = state.transactions.find((x) => x.pair === t.pair && x.type === 'transferIn');
     const feeT = state.transactions.find((x) => x.pair === t.pair && x.nobal);
     const ta = inn ? accountById(inn.accountId) : null;
     transferTail = (ta ? ' → ' + esc(ta.name) : '') + (feeT ? ' · ' + tr('کارمزد {x}', { x: fmt(feeT.amount) }) : '');
   }
-  const icName = transfer ? 'swap' : inv ? 'receipt' : t.type === 'in' ? (t.cat === 'loan' ? 'cat_loan' : 'arrowIn') : cat ? 'cat_' + cat.id : 'arrowOut';
-  const color = transfer ? 'var(--purple)' : inv ? 'var(--orange)' : t.type === 'in' ? 'var(--green)' : cat ? cat.color : 'var(--muted)';
-  const title = t.note
+  const icName = refund ? 'refund' : transfer ? 'swap' : inv ? 'receipt' : t.type === 'in' ? (t.cat === 'loan' ? 'cat_loan' : 'arrowIn') : cat ? 'cat_' + cat.id : 'arrowOut';
+  const color = refund ? 'var(--green)' : transfer ? 'var(--purple)' : inv ? 'var(--orange)' : t.type === 'in' ? 'var(--green)' : cat ? cat.color : 'var(--muted)';
+  const title = refund
+    ? (t.note ? esc(t.note) : tr('برگشتِ پول'))
+    : t.note
     ? esc(t.note)
     : transfer
       ? tr('tx.transfer')
@@ -226,6 +236,9 @@ function txRow(t, opts = {}) {
   const sign = t.type === 'in' || t.type === 'transferIn' ? '+' : '−';
   const balTxt = opts.bal == null ? '' : `<div class="bal">${tr('tx.balance', { amt: fmt(opts.bal) })}</div>`;
   const badges =
+    (refund ? '<span class="badge" style="color:var(--green)">' + tr('برگشت') + '</span>' : '') +
+    (reversed ? '<span class="badge" style="color:var(--green)">' + tr('برگشت خورد') + '</span>' : '') +
+    (!reversed && backPart > 0 ? '<span class="badge">' + tr('{amt} برگشت', { amt: fmtShort(backPart) }) + '</span>' : '') +
     (transfer ? '<span class="badge" style="color:var(--purple)">' + tr('tx.badge.transfer') + '</span>' : '') +
     (inv ? '<span class="badge" style="color:var(--orange)">' + tr('tx.items', { n: toFa((t.lines || []).length) }) + '</span>' : '') +
     (!opts.compact && t.type === 'out' && cat ? '<span class="badge" style="color:' + cat.color + '">' + cat.label + '</span>' : '') +
@@ -342,8 +355,9 @@ function txListHtml(txs, after, filtered) {
   } else if (txs.length === 0) {
     html += `<div class="empty">${emptyArt()}${tr('tx.empty')}${state.accounts.length ? `<button type="button" class="btn sm primary" onclick="openQuickTx()">${icon('plus')} ${tr('ثبت تراکنش')}</button>` : `<button type="button" class="btn sm primary" onclick="openAccountForm()">${icon('plus')} ${tr('ساخت حساب')}</button>`}</div>`;
   } else {
-    const sumOut = txs.filter((t) => t.type === 'out' && !isTransfer(t) && t.cat !== 'loan').reduce((x, t) => x + (isInvoice(t) ? t.lines.reduce((y, l) => y + (l.cat === 'loan' ? 0 : l.amount || 0), 0) : t.amount || 0), 0);
-    const sumIn = txs.filter((t) => t.type === 'in' && !isTransfer(t)).reduce((x, t) => x + (t.cat === 'loan' ? Math.min(t.interest > 0 ? t.interest : 0, t.amount || 0) : t.amount || 0), 0);
+    // بخشی از خرید که پولش برگشته، خرجِ ماه نیست؛ سندِ برگشت هم درآمد نیست
+    const sumOut = txs.filter((t) => t.type === 'out' && !isTransfer(t) && t.cat !== 'loan').reduce((x, t) => x + Math.max(0, (isInvoice(t) ? t.lines.reduce((y, l) => y + (l.cat === 'loan' ? 0 : l.amount || 0), 0) : t.amount || 0) - refundedInTxUnit(t)), 0);
+    const sumIn = txs.filter((t) => t.type === 'in' && !isTransfer(t) && !isRefundTx(t)).reduce((x, t) => x + (t.cat === 'loan' ? Math.min(t.interest > 0 ? t.interest : 0, t.amount || 0) : t.amount || 0), 0);
     if (!filtered) html += `<div class="grid2" style="margin-bottom:var(--sp-3)">
       <div class="stat"><div class="lbl">${tr('tx.spentMonth')}</div><div class="val red">${fmtShort(sumOut)}</div></div>
       <div class="stat"><div class="lbl">${tr('tx.incomeMonth')}</div><div class="val green">${fmtShort(sumIn)}</div></div>

@@ -22,6 +22,7 @@ It is designed around the **envelope (“pocket”) method** — every month’s
 - Full form: expense / income, pocket, account, date, note.
 - **Invoices**: one transaction with many line items (name, quantity, unit, unit price), each item assignable to its own pocket; the app checks that lines add up to the total.
 - **Transfers** between accounts, including cross‑currency transfers with a per‑transfer rate.
+- **Purchase refunds**: item never arrived, or the order was cancelled? Tap “Money came back” on that transaction and enter the amount, the account and the date. The purchase stays where it is (badged “Refunded”) and a refund row appears on the day the money landed; spending and the pocket drop by **exactly the refunded amount**, a refund never counts as income, and “Cancel this refund” puts everything back. Partial refunds work too (e.g. half the amount), and on an invoice the amount is spread across the line items proportionally.
 - Swipe a row to delete or edit, long‑press to repeat; “what if you hadn’t spent this?” reflection note for Waste items.
 - **Photo import** (optional, uses your own Google Gemini API key): photograph a handwritten list or a receipt and get transactions/invoice lines pre‑filled for review. Requests go to Google directly first and fall back to the app’s bridge; both routes are tried on every attempt, and the error message says which one refused and why. Settings → “Read receipts from photos” → “Test connection” reports the state of both routes.
 - **Bank SMS import**: paste several bank SMS messages (or pull them from the clipboard) and each one becomes an editable row in the same review screen the photo flow uses. Structured Iranian bank SMS (Melli, Tejarat, Mellat, Sepah, Pasargad, Saman, Saderat, Parsian, Refah, Keshavarzi, Shahr, Ayandeh, Post Bank, Resalat, Day, Maskan and BluBank — `برداشت:`/`حساب:`/`سپرده:`/`مانده:`/`نوع عملیات:` lines, `+`/`-`/`−` amount signs, `0810-21:55` stamps) are read by the built‑in parser: exact, instant, offline. Free‑form text goes to the AI with a Gemini key, and falls back to the local parser if the call fails.
@@ -111,7 +112,7 @@ All amounts are stored in the account’s own currency; the base currency is use
 
 ## Version
 
-Current: `2.38.36` (root) / `2.38.36-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+Current: `2.39.0` (root) / `2.39.0-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
 
 ## License
 

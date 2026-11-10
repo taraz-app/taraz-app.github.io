@@ -3,7 +3,7 @@
 //   tx.sub / line.sub  → کلید زیرشاخه (اختیاری)
 //   state.titleMap[norm(title)] = { cat, sub, amt, n, at }   ← یادگیری از ثبت‌های قبلی
 import { t as tr } from './i18n.js';
-import { state, CATS, catById, isTransfer, isInvoice, isLoanTx, txAmountToman, catShare, catCarried } from './state.js';
+import { state, CATS, catById, isTransfer, isInvoice, isLoanTx, txAmountToman, spendRatio, catShare, catCarried } from './state.js';
 import { toFa, fmt, fmtShort, esc, pctSign } from './utils.js';
 import { curMonthKey, shiftMonth, monthLabel } from './jalali.js';
 import { icon } from './icons.js';
@@ -285,14 +285,16 @@ export function spendItems(mk, catId) {
   const items = [];
   for (const tx of state.transactions) {
     if (tx.month !== mk || tx.type !== 'out' || isTransfer(tx) || isLoanTx(tx)) continue;
+    const keep = spendRatio(tx); // بخشی که پولش برنگشته
+    if (!keep) continue;
     if (isInvoice(tx)) {
       for (const l of tx.lines || []) {
         if (catId && l.cat !== catId) continue;
-        items.push({ txId: tx.id, cat: l.cat, sub: l.sub || '', title: l.name || '', amount: (l.amount || 0) * (txAmountToman(tx) / (tx.amount || 1)), qty: parseFloat(l.qty) || 0, unit: l.unit || '', dateISO: tx.dateISO });
+        items.push({ txId: tx.id, cat: l.cat, sub: l.sub || '', title: l.name || '', amount: (l.amount || 0) * (txAmountToman(tx) / (tx.amount || 1)) * keep, qty: parseFloat(l.qty) || 0, unit: l.unit || '', dateISO: tx.dateISO });
       }
     } else {
       if (catId && tx.cat !== catId) continue;
-      items.push({ txId: tx.id, cat: tx.cat, sub: tx.sub || '', title: tx.note || '', amount: txAmountToman(tx), qty: parseFloat(tx.qty) || 0, unit: tx.unit || '', dateISO: tx.dateISO });
+      items.push({ txId: tx.id, cat: tx.cat, sub: tx.sub || '', title: tx.note || '', amount: txAmountToman(tx) * keep, qty: parseFloat(tx.qty) || 0, unit: tx.unit || '', dateISO: tx.dateISO });
     }
   }
   return items;
@@ -576,6 +578,8 @@ export function uncategorized(catId) {
   const m = new Map();
   for (const tx of state.transactions) {
     if (tx.type !== 'out' || isTransfer(tx) || isLoanTx(tx)) continue;
+    const keep = spendRatio(tx);
+    if (!keep) continue;
     if (isInvoice(tx)) {
       const k1 = txAmountToman(tx) / (tx.amount || 1); // نرخ ارز حساب → تومان
       for (const l of tx.lines || []) {
@@ -583,7 +587,7 @@ export function uncategorized(catId) {
         const k = l.cat + '|' + titleKey(l.name);
         const e = m.get(k) || { key: k, cat: l.cat, title: l.name || tr('بدون عنوان'), n: 0, amount: 0 };
         e.n++;
-        e.amount += (l.amount || 0) * k1;
+        e.amount += (l.amount || 0) * k1 * keep;
         m.set(k, e);
       }
     } else {
@@ -591,7 +595,7 @@ export function uncategorized(catId) {
       const k = tx.cat + '|' + titleKey(tx.note);
       const e = m.get(k) || { key: k, cat: tx.cat, title: tx.note || tr('بدون عنوان'), n: 0, amount: 0 };
       e.n++;
-      e.amount += txAmountToman(tx);
+      e.amount += txAmountToman(tx) * keep;
       m.set(k, e);
     }
   }

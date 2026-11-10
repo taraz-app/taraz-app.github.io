@@ -33,7 +33,8 @@ import {
   state,
   accountGroups, activeAccounts, archivedAccounts,
   displayTxs,
-  institutionOf, baseCur, rateOf, incomeIn } from './state.js';
+  institutionOf, baseCur, rateOf, incomeIn,
+  isRefundTx, isReversed, refundedToman, refundedInTxUnit } from './state.js';
 import { t as tr } from './i18n.js';
 import { titleChipsHtml, subChipsHtml, lookupTitle, learnTitle, subsFor, subLabel, subTotals } from './subs.js';
 import { pickSub } from './subsui.js';
@@ -231,6 +232,11 @@ export function openTxForm(tx, opts) {
     openTransferForm(tx);
     return;
   }
+  // سندِ برگشتِ پول از شیتِ خودش مدیریت می‌شود (دیدنِ خرید، ویرایش، لغو)
+  if (tx && tx.refund) {
+    openRefundDetail(tx);
+    return;
+  }
   if (tx && tx.planId) {
     import('./installments.js').then((m) => m.openPlanDetail(tx.planId));
     toast(tr('این تراکنش از بخش اقساط ساخته شده؛ همان‌جا ویرایشش کن'));
@@ -343,6 +349,8 @@ export function openTxForm(tx, opts) {
       </div>
     </div>
     <button type="button" class="btn primary block" id="txNextBtn" onclick="txNext()">${type === 'in' ? (isEdit ? tr('ذخیره تغییرات') : tr('ثبت')) : tr('ادامه') + ' ←'}</button>
+    ${isEdit && isReversed(tx) ? `<div class="hint" style="margin-top:8px;color:var(--green)">${icon('refund')} ${tr('پولِ این خرید کامل برگشته؛ دیگر خرج حساب نمی‌شود.')}</div>` : ''}
+    ${isEdit && canRefund(tx) ? `<button class="btn block" style="margin-top:8px" onclick="openRefundForm('${tx.id}')">${icon('refund')} ${refundedToman(tx) > 0 ? tr('برگشتِ پول (ادامه)') : tr('پولش برگشت')}</button>` : ''}
     ${isEdit ? `<button class="btn danger block" style="margin-top:8px" onclick="delTx('${tx.id}')">${txMode === 'invoice' ? tr('حذف این فاکتور') : tr('حذف این تراکنش')}</button>` : ''}
     </div>
     <div id="txStep2" style="display:none">
@@ -1827,19 +1835,214 @@ export function qaSave() {
   celebrate();
 }
 
+// ── برگشتِ پولِ یک خرید ───────────────────────────────────────────────────
+// کالا نرسیده / سفارش لغو شده و فروشنده پول را پس داده. تراکنشِ خرید سرِ جایش
+// می‌ماند و یک سندِ برگشت در همان روزی که پول در حساب نشسته اضافه می‌شود؛ از خرجِ
+// ماه و از پاکت، فقط به اندازهٔ همان مبلغ کم می‌شود (نه بیشتر، نه همهٔ خرید).
+const REFUND_REASONS = ['کالا نرسید', 'کالا معیوب بود', 'سفارش لغو شد', 'اشتباه ثبت شده بود'];
+let refundingTxId = '';
+let editingRefundId = '';
+
+function txById(id) { return state.transactions.find((x) => x.id === id) || null; }
+function acctRate(id) { const a = accountById(id); return rateOf(a ? a.currency : baseCur()) || 1; }
+// مبلغِ یک سندِ برگشت به پولِ حسابِ خرید (تا با مبلغِ خودِ خرید مقایسه شود)
+function inTxUnit(t, pRate) { return ((t.amount || 0) * acctRate(t.accountId)) / pRate; }
+
+// روی چه تراکنشی می‌شود «پولش برگشت» زد؟ خرجِ واقعی — نه انتقال، قرض، کارمزد، قسط و طلب/بدهی
+export function canRefund(t) {
+  return !!(t && t.type === 'out' && !isTransfer(t) && !t.nobal && !t.planId && !t.debtId &&
+    t.cat !== 'loan' && !isReversed(t));
+}
+// چقدر از این خرید هنوز برنگشته است (به پولِ حسابِ همان خرید)
+export function refundRemaining(t) {
+  if (!t) return 0;
+  return Math.max(0, Math.round(((t.amount || 0) - refundedToman(t) / acctRate(t.accountId)) * 100) / 100);
+}
+
+export function openRefundForm(txId, refundId) {
+  const t = txById(txId);
+  if (!t) { toast(tr('این تراکنش پیدا نشد')); return; }
+  if (!canRefund(t) && !refundId) { toast(tr('برای این تراکنش نمی‌شود برگشتِ پول ثبت کرد')); return; }
+  refundingTxId = txId;
+  editingRefundId = refundId || '';
+  const prev = refundId ? txById(refundId) : null;
+  const pRate = acctRate(t.accountId);
+  const pa = accountById(t.accountId);
+  const cur = curName(pa ? pa.currency : baseCur());
+  const backBefore = Math.max(0, refundedToman(t) / pRate - (prev ? inTxUnit(prev, pRate) : 0));
+  const remain = Math.max(0, Math.round(((t.amount || 0) - backBefore) * 100) / 100);
+  const value = prev ? Math.round(inTxUnit(prev, pRate) * 100) / 100 : remain;
+  const half = Math.round((remain / 2) * 100) / 100;
+  openModal(`
+    <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
+    <h2>${icon('refund')} ${prev ? tr('ویرایشِ برگشتِ پول') : tr('برگشتِ پول')}</h2>
+    <div class="grid2" style="margin-bottom:12px">
+      <div class="stat"><div class="lbl">${tr('خرید')}</div><div class="val red">${fmtShort(t.amount || 0)}</div><div class="small muted">${esc(t.note || (isInvoice(t) ? tr('tx.invoice') : tr('tx.expense')))} · ${fmtDate(t.dateISO)}</div></div>
+      <div class="stat"><div class="lbl">${tr('برگشت‌خورده')}</div><div class="val ${remain > 0 ? '' : 'green'}">${fmtShort(Math.max(0, (t.amount || 0) - remain))}</div><div class="small muted">${remain > 0 ? (tr('مانده') + ' ' + fmtShort(remain)) : tr('کامل برگشت خورده')}</div></div>
+    </div>
+    <div class="field"><label>${tr('چقدر برگشت؟')} (${esc(cur)}) ${infoTip(tr('دقیقاً همان مبلغی که به حسابت برگشته؛ به همان اندازه از خرج و از پاکتِ این خرید کم می‌شود.'))}</label>
+      <input class="input" id="rfAmount" type="number" step="any" inputmode="decimal" value="${value}" onfocus="this.select()" oninput="refundPreview()">
+      <div class="chips" style="margin-top:8px">
+        <button type="button" class="chip" onclick="setRfAmount('${remain}')">${tr('کلِّ مبلغ')} · ${esc(fmtShort(remain))}</button>
+        <button type="button" class="chip" onclick="setRfAmount('${half}')">${tr('نصف')} · ${esc(fmtShort(remain / 2))}</button>
+        <button type="button" class="chip" onclick="setRfAmount('')">${icon('edit')} ${tr('مبلغ دلخواه')}</button>
+      </div>
+      <div class="hint" id="rfHint" style="margin-top:8px"></div>
+    </div>
+    <div class="field"><label>${tr('به کدام حساب برگشت؟')} ${infoTip(tr('می‌تواند با حسابِ خرید فرق کند؛ پول هر جا نشسته همان‌جا ثبت می‌شود.'))}</label>
+      ${apickHtml({ id: 'rfAcc', selected: prev ? prev.accountId : t.accountId, title: tr('به کدام حساب برگشت؟') })}</div>
+    <div class="field"><label>${tr('تاریخِ برگشت')}</label><input class="input" id="rfDate" type="date" value="${prev ? prev.dateISO : todayISO()}"></div>
+    <div class="field"><label>${tr('دلیل (اختیاری)')}</label>
+      <div class="chips" style="margin-bottom:8px">${REFUND_REASONS.map((r) => `<button type="button" class="chip" onclick="setRfReason('${r}')">${tr(r)}</button>`).join('')}</div>
+      <input class="input" id="rfNote" value="${prev ? esc(prev.note || '') : ''}" placeholder="${tr('مثلاً: کالا نرسید')}">
+    </div>
+    <button class="btn primary block" onclick="saveRefund()">${icon('check')} ${prev ? tr('ذخیره تغییرات') : tr('ثبتِ برگشت')}</button>
+    <p class="small muted" style="margin-top:10px">${tr('تراکنشِ خرید سرِ جایش می‌ماند؛ یک ردیفِ «برگشت» هم در همان روزی که پول نشسته اضافه می‌شود. از خرج و پاکت فقط به اندازهٔ مبلغی که نوشتی کم می‌شود.')}</p>
+  `);
+  refundPreview();
+}
+
+export function setRfAmount(v) {
+  const el = document.getElementById('rfAmount');
+  if (!el) return;
+  el.value = v === '' || v == null ? '' : String(v);
+  if (v === '' || v == null) { try { el.focus(); } catch (e) {} }
+  refundPreview();
+}
+export function setRfReason(r) {
+  const el = document.getElementById('rfNote');
+  if (!el) return;
+  el.value = tr(r);
+  try { el.focus(); } catch (e) {}
+}
+
+// «بعد از این برگشت چه می‌شود؟» — همان لحظه که مبلغ را می‌نویسی
+export function refundPreview() {
+  const el = document.getElementById('rfAmount');
+  const box = document.getElementById('rfHint');
+  const t = txById(refundingTxId);
+  if (!el || !box || !t) return;
+  const pRate = acctRate(t.accountId);
+  const pa = accountById(t.accountId);
+  const cur = curName(pa ? pa.currency : baseCur());
+  const prev = editingRefundId ? txById(editingRefundId) : null;
+  const backBefore = Math.max(0, refundedToman(t) / pRate - (prev ? inTxUnit(prev, pRate) : 0));
+  const remain = Math.max(0, (t.amount || 0) - backBefore);
+  const v = parseFloat(el.value) || 0;
+  if (!v) { box.innerHTML = esc(tr('مبلغِ برگشت را بنویس؛ می‌تواند کمتر از کلِّ خرید باشد.')); return; }
+  if (v > remain + 1e-6) {
+    box.innerHTML = `<span style="color:var(--red)">${tr('از مبلغِ خرید بیشتر است؛ حداکثر')} <b>${esc(fmt(Math.round(remain * 100) / 100))}</b> ${esc(cur)}</span>`;
+    return;
+  }
+  const c = catById(t.cat);
+  const pocketTxt = isInvoice(t) ? tr('پاکتِ قلم‌های فاکتور') : (c ? c.label : tr('tx.expense'));
+  const still = Math.max(0, Math.round((remain - v) * 100) / 100);
+  box.innerHTML = still > 0
+    ? tr('{v} برمی‌گردد و {s} از این خرید خرج می‌ماند؛ به همان اندازه از «{p}» کم می‌شود.', { v: esc(fmt(v)), s: esc(fmt(still)), p: esc(pocketTxt) })
+    : tr('کلِّ این خرید برگشت می‌خورد و دیگر خرج حساب نمی‌شود؛ از «{p}» بیرون می‌رود.', { p: esc(pocketTxt) });
+}
+
+export function saveRefund() {
+  const t = txById(refundingTxId);
+  if (!t) { closeModal(); return; }
+  const pRate = acctRate(t.accountId);
+  const v = parseFloat((document.getElementById('rfAmount') || {}).value);
+  if (!v || v <= 0) { toast(tr('مبلغ را درست وارد کن')); return; }
+  const prev = editingRefundId ? txById(editingRefundId) : null;
+  const backBefore = Math.max(0, refundedToman(t) / pRate - (prev ? inTxUnit(prev, pRate) : 0));
+  const remain = Math.max(0, (t.amount || 0) - backBefore);
+  if (v > remain + 1e-6) { toast(tr('مبلغِ برگشت از خودِ خرید بیشتر است')); return; }
+  const accId = (document.getElementById('rfAcc') || {}).value || t.accountId;
+  const dateISO = (document.getElementById('rfDate') || {}).value || todayISO();
+  const note = String(((document.getElementById('rfNote') || {}).value || '')).trim();
+  const amount = Math.round(((v * pRate) / acctRate(accId)) * 100) / 100; // به پولِ حسابی که پول در آن نشسته
+  if (prev) {
+    Object.assign(prev, { amount, accountId: accId, dateISO, month: monthOfISO(dateISO), note, updatedAt: Date.now() });
+  } else {
+    state.transactions.push({
+      id: uid(),
+      refund: true,
+      refundOf: t.id,
+      type: 'in',
+      cat: null,
+      amount,
+      accountId: accId,
+      dateISO,
+      time: nowHM(),
+      month: monthOfISO(dateISO),
+      note,
+      updatedAt: Date.now(),
+    });
+  }
+  rememberAccount(accId);
+  save();
+  closeModal();
+  render();
+  haptic(10);
+  toast((prev ? tr('برگشت ویرایش شد') : tr('برگشت ثبت شد')) + ' ✓');
+  returnAfterTx();
+}
+
+// زدن روی ردیفِ برگشت: چه خریدی، چقدر، و لغو/ویرایش
+export function openRefundDetail(tx) {
+  const orig = txById(tx.refundOf);
+  const a = accountById(tx.accountId);
+  openModal(`
+    <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
+    <h2>${icon('refund')} ${tr('برگشتِ پول')}</h2>
+    <div class="item" style="background:var(--bg2);border-radius:14px;margin-bottom:12px">
+      <div class="ic" style="background:var(--green-soft);color:var(--green)">${icon('refund')}</div>
+      <div class="mid">
+        <div class="t1">${fmt(tx.amount || 0)} ${esc(curName(a ? a.currency : baseCur()))}</div>
+        <div class="t2">${fmtDate(tx.dateISO)}${a ? ' · ' + esc(a.name) : ''}${tx.note ? ' · ' + esc(tx.note) : ''}</div>
+      </div>
+    </div>
+    ${orig ? `<div class="hint" style="margin-bottom:12px">${tr('به خریدِ «{n}» در {d} وصل است؛ به همان اندازه از خرج و پاکتش کم شده.', { n: esc(orig.note || tr('tx.expense')), d: esc(fmtDate(orig.dateISO)) })}</div>` : ''}
+    <div class="row" style="margin-bottom:8px">
+      ${orig ? `<button class="btn sm" style="flex:1" onclick="openTxForm(findTx('${orig.id}'))">${tr('دیدنِ خرید')}</button>` : ''}
+      ${orig ? `<button class="btn sm" style="flex:1" onclick="openRefundForm('${orig.id}','${tx.id}')">${icon('edit')} ${tr('ویرایش')}</button>` : ''}
+    </div>
+    <button class="btn danger block" onclick="cancelRefund('${tx.id}')">${tr('لغوِ این برگشت')}</button>
+    <p class="small muted" style="margin-top:10px">${tr('با لغو، پول از حساب کم می‌شود و خرید دوباره مثلِ قبل خرج حساب می‌شود.')}</p>
+  `);
+}
+
+export function cancelRefund(id) {
+  const tx = txById(id);
+  if (!tx || !tx.refund) return;
+  askConfirm(tr('این برگشت لغو شود؟ خرید دوباره کامل خرج حساب می‌شود.'), () => {
+    state.transactions = state.transactions.filter((x) => x.id !== id);
+    save();
+    render();
+    closeModal();
+    toast(tr('برگشت لغو شد'));
+  });
+}
+
 function pairTransactions(idOrPair) {
   const t = state.transactions.find((x) => x.id === idOrPair || x.pair === idOrPair);
   if (!t) return [];
-  if (t.pair) return state.transactions.filter((x) => x.pair === t.pair);
-  return [t];
+  const group = t.pair ? state.transactions.filter((x) => x.pair === t.pair) : [t];
+  // سندِ برگشتِ پول به خریدِ اصلی وصل است؛ با حذفِ خرید، برگشت‌هایش هم بی‌معنی می‌شوند
+  const ids = new Set(group.map((x) => x.id));
+  for (const x of state.transactions) {
+    if (x.refund && ids.has(x.refundOf) && !ids.has(x.id)) { group.push(x); ids.add(x.id); }
+  }
+  return group;
 }
 
 export function delTx(id) {
   const group = pairTransactions(id);
-  const isPair = group.length > 1;
+  const hasRefund = group.some((x) => x.refund);
+  const isRefundRow = group.length === 1 && group[0].refund;
+  const isPair = group.length > 1 && !hasRefund;
   const inv = group.length === 1 && isInvoice(group[0]);
   askConfirm(
-    isPair ? tr('این انتقال (هر دو طرف) حذف شود؟') : inv ? tr('این فاکتور و همه اقلامش حذف شود؟') : tr('این تراکنش حذف شود؟'),
+    isRefundRow ? tr('این برگشتِ پول حذف شود؟ خرید دوباره کامل خرج حساب می‌شود.')
+    : hasRefund ? tr('این تراکنش با برگشتِ پولش حذف شود؟')
+    : isPair ? tr('این انتقال (هر دو طرف) حذف شود؟')
+    : inv ? tr('این فاکتور و همه اقلامش حذف شود؟')
+    : tr('این تراکنش حذف شود؟'),
     () => {
     const ids = new Set(group.map((x) => x.id));
     // اگر تراکنش قسط بود، ردیفش هم به حالت پرداخت‌نشده برگردد
@@ -2255,12 +2458,17 @@ export function openPocketLedger(catId, mk) {
       : items
           .map((it) => {
             const a = accountById(it.accountId);
+            const backBadge = it.reversed
+              ? ' <span class="badge" style="color:var(--green)">' + tr('برگشت خورد') + '</span>'
+              : it.refunded
+                ? ' <span class="badge">' + tr('{amt} برگشت', { amt: fmtShort(it.refunded) }) + '</span>'
+                : '';
             return `<div class="item" onclick="openTxForm(findTx('${it.txId}'),{back:&quot;openPocketLedger('${catId}','${mk}')&quot;})">
               <div class="mid">
-                <div class="t1">${esc(it.title)}${it.invoice ? (' <span class="badge">' + tr('فاکتور') + '</span>') : ''}</div>
-                <div class="t2">${fmtDate(it.dateISO)} · ${a ? esc(a.name) : '—'}</div>
+                <div class="t1">${esc(it.title)}${it.invoice ? (' <span class="badge">' + tr('فاکتور') + '</span>') : ''}${backBadge}</div>
+                <div class="t2">${fmtDate(it.dateISO)} · ${a ? esc(a.name) : '—'}${it.reversed ? ' · ' + tr('خرج حساب نمی‌شود') : ''}</div>
               </div>
-              <div class="amt ${it.inflow ? 'in' : 'out'}">${it.inflow ? '+' : '−'}${fmt(it.amount)}${a && a.currency !== baseCur() ? ` <small class="muted">${esc(curName(a.currency))}</small><div class="small muted" style="font-weight:400">≈ ${fmtShort(it.amount * rateOf(a.currency))}</div>` : ''}</div>
+              <div class="amt ${it.inflow ? 'in' : 'out'}"${it.reversed ? ' style="opacity:.5;text-decoration:line-through"' : ''}>${it.inflow ? '+' : '−'}${fmt(it.reversed ? (it.gross || 0) : it.amount)}${a && a.currency !== baseCur() ? ` <small class="muted">${esc(curName(a.currency))}</small><div class="small muted" style="font-weight:400">≈ ${fmtShort(it.amount * rateOf(a.currency))}</div>` : ''}</div>
             </div>`;
           })
           .join('');

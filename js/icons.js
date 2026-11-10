@@ -54,6 +54,7 @@ const P = {
   alert: '<path d="M12 3l10 18H2z"/><path d="M12 10v4"/><path d="M12 18h.01"/>',
   check: '<path d="M5 12l5 5 9-11"/>',
   arrowIn: '<path d="M12 5v14"/><path d="M6 13l6 6 6-6"/>',
+  refund: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/>',
   arrowOut: '<path d="M12 19V5"/><path d="M6 11l6-6 6 6"/>',
   target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/>',
   fire: '<path d="M12 22c4 0 7-3 7-7 0-3-2-5-3-7-1 2-2 3-3 3 0-3-1-6-4-8 0 4-4 6-4 12a7 7 0 0 0 7 7z"/>',

@@ -3,7 +3,7 @@
 import { icon } from './icons.js';
 import { esc, toFa, fmtShort, toast, pctSign } from './utils.js';
 import { t as tr } from './i18n.js';
-import { state, CATS, save, catSpent, catShare, budgetOf, computeMonths, incomeIn, isInvoice, isTransfer, isLoanTx, txAmountToman, FUN_CARRY_MONTHS, PROFILES, profileFor, setProfile, setTargetMonth, getTargetMonth } from './state.js';
+import { state, CATS, save, catSpent, catShare, budgetOf, computeMonths, incomeIn, isInvoice, isTransfer, isLoanTx, isReversed, spendRatio, txAmountToman, FUN_CARRY_MONTHS, PROFILES, profileFor, setProfile, setTargetMonth, getTargetMonth } from './state.js';
 import { curMonthKey, monthLabel, shiftMonth, monthOfISO } from './jalali.js';
 import { monthInstallments } from './installments.js';
 import { openModal, closeModal } from './modal.js';
@@ -14,13 +14,13 @@ const joinFa = (arr) => (arr.length <= 1 ? arr.join('') : arr.slice(0, -1).join(
 
 // ── تراکنش‌های تفریح ماه (ساده؛ فاکتور به‌صورت خطی) ──
 function funTxs(mk) {
-  return state.transactions.filter((t) => t.month === mk && t.type === 'out' && t.cat === 'fun' && !isInvoice(t) && !isTransfer(t) && !isLoanTx(t));
+  return state.transactions.filter((t) => t.month === mk && t.type === 'out' && t.cat === 'fun' && !isInvoice(t) && !isTransfer(t) && !isLoanTx(t) && !isReversed(t));
 }
 export function funTagStats(mk) {
   const list = funTxs(mk);
   let sum = 0, social = 0, play = 0, tagged = 0;
   for (const t of list) {
-    const a = txAmountToman(t);
+    const a = txAmountToman(t) * spendRatio(t);
     sum += a;
     const tags = t.tags || [];
     if (tags.length) tagged++;
@@ -64,7 +64,7 @@ function sourcesText(f, excludeId) {
   return '';
 }
 function txCount(mk) {
-  return state.transactions.filter((t) => t.month === mk && t.type === 'out' && !isTransfer(t) && !isLoanTx(t)).length;
+  return state.transactions.filter((t) => t.month === mk && t.type === 'out' && !isTransfer(t) && !isLoanTx(t) && !isReversed(t)).length;
 }
 function budgetMonthsBefore(mk) {
   return Object.keys(state.budgets).filter((k) => k < mk && state.budgets[k] && state.budgets[k].amount > 0).length;
@@ -141,7 +141,7 @@ export function insights(mk, opts) {
   }
 
   // معنا: یک پرداخت بزرگ به‌جای مکرر
-  const chTx = state.transactions.filter((t) => t.month === mk && t.type === 'out' && t.cat === 'charity' && !isTransfer(t) && !isLoanTx(t));
+  const chTx = state.transactions.filter((t) => t.month === mk && t.type === 'out' && t.cat === 'charity' && !isTransfer(t) && !isLoanTx(t) && !isReversed(t));
   const ch = f.cats.find((c) => c.id === 'charity');
   if (!mid && chTx.length === 1 && ch && ch.spent >= ch.share * 0.8) {
     push({ id: 'charity_once', head: tr('همهٔ معنا در یک پرداخت بود.'), body: tr('مکرر و کوچک، همراه با وقت و تماس، بیشتر می‌ماند تا یک حوالهٔ بی‌نام — گیرنده‌ای که می‌بینی، اثری که پیداست.') });

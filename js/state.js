@@ -286,6 +286,7 @@ export function save() {
   backfillTxTime();
   touchMeta();
   monthsCache = null;
+  clearRefundCache();
   persistLocal();
   onSave();
 }
@@ -293,6 +294,7 @@ export function save() {
 export function replaceState(next, { markDirty } = {}) {
   state = Object.assign(defaultState(), next);
   monthsCache = null;
+  clearRefundCache();
   syncBase();
   if (markDirty) touchMeta();
   persistLocal();
@@ -359,6 +361,60 @@ export function displayTxs(list) {
 
 export function isInvoice(t) {
   return !!(t && t.kind === 'invoice' && t.lines && t.lines.length);
+}
+
+// ── برگشتِ پولِ یک خرید ───────────────────────────────────────────────────
+// خریدی که فروشنده پولش را پس داده، خرجِ واقعی نبوده؛ ولی خودِ پولِ برگشتی یک حرکتِ
+// واقعیِ حساب است. پس سندِ برگشت یک تراکنشِ «ورودی» با refundOf به خریدِ اصلی است:
+//   • موجودیِ حسابِ مقصد را زیاد می‌کند (accountCurrent خودش جمع می‌زند)
+//   • درآمد نیست (از incomeIn بیرون است) و به هیچ پاکتی نمی‌رود (cat ندارد)
+//   • فقط به همان اندازه‌ای که پول برگشته، از اثرِ خریدِ اصلی کم می‌کند (spendRatio)
+let refundCache = null;
+let refundCacheKey = '';
+export function clearRefundCache() { refundCache = null; refundCacheKey = ''; }
+function refundIndex() {
+  const key = state.updatedAt + ':' + state.transactions.length;
+  if (refundCache && refundCacheKey === key) return refundCache;
+  const m = new Map();
+  for (const t of state.transactions) {
+    if (!t || !t.refund || t.type !== 'in' || !t.refundOf) continue;
+    const e = m.get(t.refundOf) || { toman: 0, txs: [] };
+    const a = accountById(t.accountId);
+    e.toman += (t.amount || 0) * rateOf(a ? a.currency : baseCur());
+    e.txs.push(t);
+    m.set(t.refundOf, e);
+  }
+  refundCache = m;
+  refundCacheKey = key;
+  return m;
+}
+// سندِ برگشتِ پول (نه درآمد، نه انتقال): با آیکن و برچسبِ خودش نشان داده می‌شود
+export function isRefundTx(t) { return !!(t && t.refund && t.type === 'in'); }
+// جمعِ برگشت‌های یک خرید (به تومان) به‌همراهِ سندشان
+export function refundsOf(t) {
+  return refundIndex().get(t && t.id) || { toman: 0, txs: [] };
+}
+export function refundedToman(t) { return refundsOf(t).toman; }
+// مبلغِ برگشت‌خورده به پولِ خودِ تراکنش (برای نمایش کنارِ همان ردیف)
+export function refundedInTxUnit(t) {
+  const a = accountById(t && t.accountId);
+  const rate = rateOf(a ? a.currency : baseCur());
+  return rate ? refundedToman(t) / rate : 0;
+}
+// این خرید دیگر خرج حساب می‌شود؟ (کاملاً برگشت خورده = نه)
+export function isReversed(t) {
+  if (!t || t.type !== 'out' || isTransfer(t) || isLoanTx(t)) return false;
+  const r = refundedToman(t);
+  return r > 0 && r >= txAmountToman(t) - 0.5;
+}
+// چه کسری از این خرج هنوز سرِ جایش است (برگشتِ جزئی = کمتر از یک)
+export function spendRatio(t) {
+  if (!t || t.type !== 'out' || isTransfer(t) || isLoanTx(t)) return 1;
+  const total = txAmountToman(t);
+  if (!(total > 0)) return 1;
+  const r = refundedToman(t);
+  if (!(r > 0)) return 1;
+  return Math.max(0, Math.min(1, 1 - r / total));
 }
 
 export function txAmountToman(t) {
@@ -432,16 +488,19 @@ export function runningBalanceByTxId() {
   return after;
 }
 
-// خرج واقعی ماه — بدون تراکنش‌های قرض (و بدون اقلامِ قرض در فاکتورها)
+// خرج واقعی ماه — بدون تراکنش‌های قرض (و بدون اقلامِ قرض در فاکتورها) و بدون
+// بخشی از خرید که پولش برگشته است
 export function spentIn(mk) {
   let s = 0;
   for (const t of state.transactions) {
     if (t.month !== mk || t.type !== 'out') continue;
+    const keep = spendRatio(t);
+    if (!keep) continue;
     if (isInvoice(t)) {
       const rate = rateOf(accountById(t.accountId)?.currency);
-      for (const line of t.lines) if (line.cat !== LOAN_CAT) s += (line.amount || 0) * rate;
+      for (const line of t.lines) if (line.cat !== LOAN_CAT) s += (line.amount || 0) * rate * keep;
     } else if (!isLoanTx(t)) {
-      s += txAmountToman(t);
+      s += txAmountToman(t) * keep;
     }
   }
   return s;
@@ -473,12 +532,14 @@ export function catSpent(mk, catId) {
   let s = 0;
   for (const t of state.transactions) {
     if (t.month !== mk || t.type !== 'out') continue;
+    const keep = spendRatio(t);
+    if (!keep) continue;
     if (isInvoice(t)) {
       for (const line of t.lines) {
-        if (line.cat === catId) s += (line.amount || 0) * rateOf(accountById(t.accountId)?.currency);
+        if (line.cat === catId) s += (line.amount || 0) * rateOf(accountById(t.accountId)?.currency) * keep;
       }
     } else if (t.cat === catId) {
-      s += txAmountToman(t);
+      s += txAmountToman(t) * keep;
     }
   }
   return s;
@@ -502,26 +563,33 @@ export function pocketItems(mk, catId) {
       continue;
     }
     if (t.type !== 'out') continue;
+    const keep = spendRatio(t);
     if (isInvoice(t)) {
       for (const line of t.lines) {
         if (line.cat !== catId) continue;
         items.push({
           txId: t.id,
-          amount: line.amount || 0,
+          amount: (line.amount || 0) * keep,
           title: line.name || 'قلم فاکتور',
           dateISO: t.dateISO,
           accountId: t.accountId,
           invoice: true,
+          gross: line.amount || 0,
+          refunded: keep < 1 ? (line.amount || 0) * (1 - keep) : 0,
+          reversed: keep === 0,
         });
       }
     } else if (t.cat === catId) {
       items.push({
         txId: t.id,
-        amount: t.amount || 0,
+        amount: (t.amount || 0) * keep,
         title: t.note || (catById(catId) ? catById(catId).label : 'خرج'),
         dateISO: t.dateISO,
         accountId: t.accountId,
         invoice: false,
+        gross: t.amount || 0,
+        refunded: keep < 1 ? (t.amount || 0) * (1 - keep) : 0,
+        reversed: keep === 0,
       });
     }
   }
@@ -552,10 +620,10 @@ export function catCarried(mk, catId) {
   return (m && m.carriedCats && m.carriedCats[catId]) || 0;
 }
 
-// درآمد واقعی ماه — بدون پول قرضی/برگشتی
+// درآمد واقعی ماه — بدون پول قرضی/برگشتی و بدون سندِ برگشتِ خرید
 export function incomeIn(mk) {
   return state.transactions
-    .filter((t) => t.month === mk && t.type === 'in' && !isTransfer(t))
+    .filter((t) => t.month === mk && t.type === 'in' && !isTransfer(t) && !isRefundTx(t))
     .reduce((s, t) => s + (isLoanTx(t) ? txInterestToman(t) : txAmountToman(t)), 0);
 }
 

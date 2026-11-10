@@ -3,7 +3,7 @@
 import { esc, fmt, fmtShort, toFa, normNum } from './utils.js';
 import { t as tr } from './i18n.js';
 import { icon } from './icons.js';
-import { CATS, state, isTransfer, isInvoice, accountById } from './state.js';
+import { CATS, state, isTransfer, isInvoice, accountById, isRefundTx, refundedInTxUnit } from './state.js';
 import { subsFor, subLabel } from './subs.js';
 import { curMonthKey, shiftMonth, monthLabel } from './jalali.js';
 import { openModal, closeModal } from './modal.js';
@@ -157,13 +157,16 @@ function chip(label, off, color) {
 
 export function summaryHtml(txs) {
   if (!isActive()) return '';
-  let out = 0, inn = 0;
+  let out = 0, inn = 0, back = 0;
   for (const t of txs) {
     if (isTransfer(t)) continue;
-    if (t.type === 'in') inn += t.amount || 0; else out += t.amount || 0;
+    // سندِ برگشت درآمد نیست؛ پولِ برگشتی از خرجِ همان خرید کم می‌شود
+    if (isRefundTx(t)) { back += t.amount || 0; continue; }
+    if (t.type === 'in') inn += t.amount || 0;
+    else out += Math.max(0, (t.amount || 0) - refundedInTxUnit(t));
   }
   return `<div class="txf-sum"><span>${tr('{n} تراکنش', { n: toFa(txs.length) })}</span>
-    ${out ? `<span class="red">−${fmt(out)}</span>` : ''}${inn ? `<span class="green">+${fmt(inn)}</span>` : ''}</div>`;
+    ${out ? `<span class="red">−${fmt(out)}</span>` : ''}${inn ? `<span class="green">+${fmt(inn)}</span>` : ''}${back ? `<span class="muted">${tr('برگشت {amt}', { amt: fmt(back) })}</span>` : ''}</div>`;
 }
 
 // ── شیت فیلتر کامل ──
