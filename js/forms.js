@@ -1848,9 +1848,11 @@ function acctRate(id) { const a = accountById(id); return rateOf(a ? a.currency 
 // مبلغِ یک سندِ برگشت به پولِ حسابِ خرید (تا با مبلغِ خودِ خرید مقایسه شود)
 function inTxUnit(t, pRate) { return ((t.amount || 0) * acctRate(t.accountId)) / pRate; }
 
-// روی چه تراکنشی می‌شود «پولش برگشت» زد؟ خرجِ واقعی — نه انتقال، قرض، کارمزد، قسط و طلب/بدهی
+// روی چه تراکنشی می‌شود «پولش برگشت» زد؟ خرجِ واقعی — نه انتقال، قرض، کارمزد و طلب/بدهی
 export function canRefund(t) {
-  return !!(t && t.type === 'out' && !isTransfer(t) && !t.nobal && !t.planId && !t.debtId &&
+  // قسطِ خریدِ قسطی هم برگشت‌پذیر است (پولش برگشته یا از خرید منصرف شده‌ای)؛
+  // ردیف‌های طرحِ وام با پاکت قرض/امانت به همان دلیلِ همیشگی خرج حساب نمی‌شوند
+  return !!(t && t.type === 'out' && !isTransfer(t) && !t.nobal && !t.debtId &&
     t.cat !== 'loan' && !isReversed(t));
 }
 // چقدر از این خرید هنوز برنگشته است (به پولِ حسابِ همان خرید)

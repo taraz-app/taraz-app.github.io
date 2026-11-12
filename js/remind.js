@@ -42,6 +42,7 @@ export function reminderItems() {
     });
   }
   for (const p of allPlans()) {
+    if (p.cancelled) continue; // از این خرید منصرف شده‌ای؛ سررسیدی در کار نیست
     const a = accountById(p.accountId);
     const cur = (a && a.currency) || baseCur();
     const inst = (p.rows || []).filter((x) => x.kind !== 'down' && x.kind !== 'interest');

@@ -15,7 +15,7 @@ const W = { target: 'gregorian', opts: { accounts: true, invest: true, debts: tr
 
 function summary() {
   const openDebts = (state.debts || []).filter((d) => debtRemaining(d) > 0);
-  const openPlans = (state.installments || []).filter((p) => (p.rows || []).some((r) => !r.paidISO));
+  const openPlans = (state.installments || []).filter((p) => !p.cancelled && (p.rows || []).some((r) => !r.paidISO));
   const mk = curMonthKey();
   return {
     accounts: state.accounts.length,

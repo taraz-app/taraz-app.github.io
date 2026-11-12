@@ -7,12 +7,12 @@
 //   • پرداخت هر قسط / پیش‌پرداخت → تراکنش خرج از حساب، در پاکت انتخابی (داخل بودجه)
 //   • ویرایش/حذف ردیف پرداخت‌شده → تراکنشش هماهنگ می‌شود
 import { icon } from './icons.js';
-import { esc, fmt, fmtShort, toFa, toast, uid, todayISO, haptic, infoTip } from './utils.js';
+import { esc, fmt, fmtShort, toFa, toast, uid, todayISO, nowHM, haptic, infoTip } from './utils.js';
 import { fmtDate, monthOfISO, toJalali, toGregorian, monthLabel, curMonthKey } from './jalali.js';
 import { addBookMonths } from './jalali.js';
 import { closeModal, openModal, askConfirm } from './modal.js';
 import { render } from './view.js';
-import { save, state, accountById, CATS, LOAN_CAT, baseCur, curName } from './state.js';
+import { save, state, accountById, CATS, LOAN_CAT, baseCur, curName, rateOf, refundedToman, refundedInTxUnit, isReversed } from './state.js';
 import { t as tr } from './i18n.js';
 import { apickHtml } from './acctpick.js';
 import { subChipsHtml } from './subs.js';
@@ -64,17 +64,30 @@ export function rowTotal(r) {
 }
 export function planStats(p) {
   const rows = p.rows || [];
+  // انصراف از خریدِ قسطی: اقساطِ باقی‌مانده دیگر تعهد نیستند (ردیف‌ها برای تاریخچه می‌مانند)
+  const cancelled = !!p.cancelled;
   const paid = rows.filter((r) => r.paidISO);
-  const unpaid = rows.filter((r) => !r.paidISO);
+  const unpaid = cancelled ? [] : rows.filter((r) => !r.paidISO);
   const total = rows.reduce((s, r) => s + rowTotal(r), 0);
   const paidSum = paid.reduce((s, r) => s + rowTotal(r), 0);
   const remain = unpaid.reduce((s, r) => s + rowTotal(r), 0);
+  const remainAll = rows.filter((r) => !r.paidISO).reduce((s, r) => s + rowTotal(r), 0);
   const interestAll = rows.reduce((s, r) => s + (Number(r.interest) || 0), 0);
   const interestPaid = paid.reduce((s, r) => s + (Number(r.interest) || 0), 0);
   const penaltyPaid = paid.reduce((s, r) => s + (Number(r.penalty) || 0), 0);
   const next = unpaid.slice().sort((a, b) => a.dueISO.localeCompare(b.dueISO))[0] || null;
-  const overdue = unpaid.filter((r) => daysUntil(r.dueISO) < 0).length;
-  return { rows, paid, unpaid, total, paidSum, remain, interestAll, interestPaid, penaltyPaid, next, overdue, done: unpaid.length === 0 && rows.length > 0 };
+  const overdue = cancelled ? 0 : unpaid.filter((r) => daysUntil(r.dueISO) < 0).length;
+  return { rows, paid, unpaid, total, paidSum, remain, remainAll, interestAll, interestPaid, penaltyPaid, next, overdue, cancelled, refunded: planRefunded(p), done: cancelled || (unpaid.length === 0 && rows.length > 0) };
+}
+// جمعِ پولِ برگشتیِ قسط‌های پرداخت‌شدهٔ این طرح (به تومان، برای نمایش)
+export function planRefunded(p) {
+  let s = 0;
+  for (const r of (p && p.rows) || []) {
+    if (!r.txId) continue;
+    const t = state.transactions.find((x) => x.id === r.txId);
+    if (t) s += refundedToman(t);
+  }
+  return s;
 }
 // جمع ماندهٔ همهٔ طرح‌های باز (تعهدات)
 export function totalRemaining() {
@@ -84,6 +97,7 @@ export function totalRemaining() {
 export function dueRows(within = 3) {
   const out = [];
   for (const p of allPlans()) {
+    if (p.cancelled) continue;
     for (const r of p.rows || []) {
       if (r.paidISO) continue;
       const n = daysUntil(r.dueISO);
@@ -98,7 +112,10 @@ export function overdueInstallments() {
 // جمع اقساط (پرداخت‌شده + نشده) سررسید در یک ماه جلالی
 export function monthInstallments(mk) {
   let sum = 0;
-  for (const p of allPlans()) for (const r of p.rows || []) if (monthOfISO(r.dueISO) === mk) sum += rowTotal(r);
+  for (const p of allPlans()) {
+    if (p.cancelled) continue;
+    for (const r of p.rows || []) if (monthOfISO(r.dueISO) === mk) sum += rowTotal(r);
+  }
   return sum;
 }
 
@@ -106,6 +123,16 @@ export function monthInstallments(mk) {
 function removeTx(id) {
   if (!id) return;
   state.transactions = state.transactions.filter((t) => t.id !== id);
+}
+// با حذف/لغوِ پرداختِ یک قسط، سندِ برگشتِ پولش هم بی‌معنی می‌شود
+function refundsOfRow(txId) {
+  if (!txId) return [];
+  return state.transactions.filter((x) => x.refund && x.refundOf === txId);
+}
+function dropRefundsOfRow(txId) {
+  const ids = refundsOfRow(txId).map((x) => x.id);
+  if (ids.length) state.transactions = state.transactions.filter((x) => !ids.includes(x.id));
+  return ids.length;
 }
 function upsertTx(existingId, payload) {
   let t = existingId ? state.transactions.find((x) => x.id === existingId) : null;
@@ -530,9 +557,10 @@ export function delPlan(id) {
   const p = findPlan(id);
   if (!p) return;
   const linked = (p.rows || []).some((r) => r.txId) || p.disburseTxId;
-  askConfirm(linked ? tr('این طرح و همهٔ تراکنش‌های وصل‌شده (واریز و اقساط) حذف شود؟') : tr('این طرح حذف شود؟'), () => {
+  askConfirm(linked ? tr('این طرح و همهٔ تراکنش‌های وصل‌شده (واریز، اقساط و برگشتِ پول) حذف شود؟') : tr('این طرح حذف شود؟'), () => {
+    state.transactions = state.transactions.filter((x) => !(x.refund && x.cancelOf === p.id));
     removeTx(p.disburseTxId);
-    for (const r of p.rows || []) removeTx(r.txId);
+    for (const r of p.rows || []) { dropRefundsOfRow(r.txId); removeTx(r.txId); }
     state.installments = allPlans().filter((x) => x.id !== id);
     save();
     closeModal();
@@ -561,6 +589,13 @@ export function unpayRow(planId, rowId) {
   const p = findPlan(planId);
   const r = p && (p.rows || []).find((x) => x.id === rowId);
   if (!r) return;
+  if (refundsOfRow(r.txId).length) {
+    askConfirm(tr('این قسط سندِ برگشتِ پول دارد. با لغوِ پرداخت، برگشت هم پاک می‌شود و پول به حساب برنمی‌گردد. ادامه بدهی؟'), () => {
+      dropRefundsOfRow(r.txId);
+      unpayRow(planId, rowId);
+    });
+    return;
+  }
   r.paidISO = null;
   r.noTx = false;
   syncRowTx(p, r);
@@ -668,13 +703,181 @@ export function delRow(planId, rowId) {
   const p = findPlan(planId);
   if (!p) return;
   const r = p.rows.find((x) => x.id === rowId);
-  if (r) removeTx(r.txId);
+  if (r) { dropRefundsOfRow(r.txId); removeTx(r.txId); }
   p.rows = p.rows.filter((x) => x.id !== rowId);
   for (const x of p.rows) syncRowTx(p, x); // شماره‌ها بعد از حذف به‌روز شوند
   p.updatedAt = Date.now();
   save();
   render();
   openPlanDetail(planId);
+}
+
+// ── انصراف از خریدِ قسطی: پولِ پرداخت‌شده‌ها برمی‌گردد، بقیهٔ اقساط لغو می‌شوند ──
+// مثلِ برگشتِ یک تراکنش: پولِ واقعی در حساب می‌نشیند و خرجِ همان ماه کم می‌شود؛ فقط
+// این‌جا برای هر قسطِ پرداخت‌شده یک سندِ برگشت ساخته می‌شود تا حسابِ هر ماه دقیق بماند.
+let cancellingPlanId = '';
+const CANCEL_REASONS = ['انصراف از خرید', 'کالا را پس دادم', 'فروشنده لغو کرد', 'کالا موجود نبود'];
+
+function cancelRoom(p) {
+  const st = planStats(p);
+  const rows = st.paid.filter((r) => {
+    const t = r.txId && state.transactions.find((x) => x.id === r.txId);
+    return !!t && (t.amount || 0) - refundedInTxUnit(t) > 0.5;
+  });
+  // سقفِ هر قسط به پولِ همان تراکنش (مثلِ شیتِ برگشتِ یک تراکنش)
+  const caps = rows.map((r) => {
+    const t = state.transactions.find((x) => x.id === r.txId);
+    return t ? Math.max(0, Math.round(((t.amount || 0) - refundedInTxUnit(t)) * 100) / 100) : 0;
+  });
+  return { st, rows, caps, total: caps.reduce((a, b) => a + b, 0) };
+}
+
+export function openPlanCancel(id) {
+  const p = findPlan(id);
+  if (!p) return;
+  const { st, rows, total } = cancelRoom(p);
+  if (!rows.length && !st.unpaid.length) { toast(tr('چیزی برای لغو یا برگشت نیست')); return; }
+  cancellingPlanId = id;
+  openModal(`
+    <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
+    <h2>${icon('refund')} ${tr('انصراف از خریدِ قسطی')}</h2>
+    <div class="grid2" style="margin-bottom:12px">
+      <div class="stat"><div class="lbl">${tr('پرداخت‌شده')}</div><div class="val red">${fmtShort(st.paidSum)}</div><div class="small muted">${tr('قابلِ برگشت')}: ${fmtShort(total)}</div></div>
+      <div class="stat"><div class="lbl">${tr('اقساطِ لغونشده')}</div><div class="val">${fmtShort(st.remain)}</div><div class="small muted">${tr('{n} ردیف', { n: toFa(st.unpaid.length) })}</div></div>
+    </div>
+    <div class="field"><label>${tr('چقدر برگشت؟')} (${esc(curName(baseCur()))}) ${infoTip(tr('بین قسط‌های پرداخت‌شده به نسبت پخش می‌شود؛ برای هر قسط یک سندِ برگشت ثبت می‌شود تا خرجِ همان ماه دقیق درست شود.'))}</label>
+      <input class="input" id="pcAmount" type="number" step="any" inputmode="decimal" value="${Math.round(total * 100) / 100}" onfocus="this.select()" oninput="pcPreview()">
+      <div class="chips" style="margin-top:8px">
+        <button type="button" class="chip" onclick="setPcAmount('${Math.round(total * 100) / 100}')">${tr('همهٔ پرداختی')} · ${esc(fmtShort(total))}</button>
+        ${st.interestPaid > 0 ? `<button type="button" class="chip" onclick="setPcAmount('${Math.max(0, Math.round((total - st.interestPaid) * 100) / 100)}')">${tr('به‌جز سود')} · ${esc(fmtShort(Math.max(0, total - st.interestPaid)))}</button>` : ''}
+        <button type="button" class="chip" onclick="setPcAmount('')">${icon('edit')} ${tr('مبلغ دلخواه')}</button>
+      </div>
+      <div class="hint" id="pcHint" style="margin-top:8px"></div>
+    </div>
+    <div class="field"><label>${tr('به کدام حساب برگشت؟')}</label>${apickHtml({ id: 'pcAcc', selected: p.accountId, compact: true, title: tr('به کدام حساب برگشت؟') })}</div>
+    <div class="field"><label>${tr('تاریخِ برگشت')}</label><input class="input" id="pcDate" type="date" value="${todayISO()}"></div>
+    <div class="field"><label>${tr('دلیل (اختیاری)')}</label>
+      <div class="chips" style="margin-bottom:8px">${CANCEL_REASONS.map((r) => `<button type="button" class="chip" onclick="setPcReason('${r}')">${tr(r)}</button>`).join('')}</div>
+      <input class="input" id="pcNote" placeholder="${tr('مثلاً: انصراف از خرید')}">
+    </div>
+    <button class="btn primary block" onclick="savePlanCancel()">${icon('check')} ${tr('ثبتِ انصراف و برگشتِ پول')}</button>
+    <p class="small muted" style="margin-top:10px">${tr('اقساطِ باقی‌مانده لغو می‌شوند و دیگر در ماندهٔ اقساط، سررسیدها و یادآوری‌ها نمی‌آیند. قسط‌های پرداخت‌شده سرِ جایشان می‌مانند و سندِ برگشتشان در روزِ خودش دیده می‌شود.')}</p>
+  `);
+  pcPreview();
+}
+
+export function setPcAmount(v) {
+  const el = document.getElementById('pcAmount');
+  if (!el) return;
+  el.value = v === '' || v == null ? '' : String(v);
+  if (v === '' || v == null) { try { el.focus(); } catch (e) {} }
+  pcPreview();
+}
+export function setPcReason(r) {
+  const el = document.getElementById('pcNote');
+  if (!el) return;
+  el.value = tr(r);
+  try { el.focus(); } catch (e) {}
+}
+export function pcPreview() {
+  const p = findPlan(cancellingPlanId);
+  const el = document.getElementById('pcAmount');
+  const box = document.getElementById('pcHint');
+  if (!p || !el || !box) return;
+  const { st, rows, total } = cancelRoom(p);
+  const v = parseFloat(el.value) || 0;
+  if (!rows.length) { box.innerHTML = esc(tr('قسطِ پرداخت‌شده‌ای نیست؛ فقط اقساطِ باقی‌مانده لغو می‌شوند.')); return; }
+  if (!v) { box.innerHTML = esc(tr('مبلغِ برگشت را بنویس؛ می‌تواند کمتر از پرداختی باشد (مثلاً فروشنده جریمه کم کرده).')); return; }
+  if (v > total + 0.5) {
+    box.innerHTML = `<span style="color:var(--red)">${tr('از پرداختی‌ها بیشتر است؛ حداکثر')} <b>${esc(fmt(total))}</b></span>`;
+    return;
+  }
+  box.innerHTML = tr('{v} برمی‌گردد و از خرجِ ماهِ همان قسط‌ها کم می‌شود؛ {n} ردیفِ باقی‌مانده لغو می‌شود.', { v: esc(fmt(v)), n: toFa(st.unpaid.length) });
+}
+
+export function savePlanCancel() {
+  const p = findPlan(cancellingPlanId);
+  if (!p) { closeModal(); return; }
+  const { st, rows, caps, total } = cancelRoom(p);
+  const v = parseFloat((document.getElementById('pcAmount') || {}).value);
+  if (rows.length && !(v > 0)) { toast(tr('مبلغِ برگشت را بنویس')); return; }
+  if (v > total + 0.5) { toast(tr('مبلغِ برگشت از پرداختی‌ها بیشتر است')); return; }
+  const accId = (document.getElementById('pcAcc') || {}).value || p.accountId;
+  const dateISO = (document.getElementById('pcDate') || {}).value || todayISO();
+  const note = String(((document.getElementById('pcNote') || {}).value || '')).trim();
+  // پخشِ مبلغ بین قسط‌ها به نسبتِ جایِ باقی‌ماندهٔ هر قسط (سقف: خودِ آن قسط)
+  const shares = new Array(rows.length).fill(0);
+  let left = Math.max(0, v);
+  for (let guard = 0; guard < 4 && left > 0.005; guard++) {
+    const idx = rows.map((r, i) => i).filter((i) => caps[i] - shares[i] > 0.005);
+    if (!idx.length) break;
+    const roomSum = idx.reduce((s2, i) => s2 + (caps[i] - shares[i]), 0);
+    let given = 0;
+    idx.forEach((i, k) => {
+      const want = k === idx.length - 1 ? left - given : Math.round(((left * (caps[i] - shares[i])) / roomSum) * 100) / 100;
+      const take = Math.min(caps[i] - shares[i], Math.max(0, want));
+      shares[i] += take;
+      given += take;
+    });
+    left = Math.max(0, left - given);
+  }
+  const acc = accountById(accId);
+  const accRate = rateOf(acc ? acc.currency : baseCur()) || 1;
+  let made = 0;
+  rows.forEach((r, i) => {
+    const share = Math.round(shares[i] * 100) / 100;
+    if (!(share > 0)) return;
+    const t = state.transactions.find((x) => x.id === r.txId);
+    if (!t) return;
+    const tRate = rateOf((accountById(t.accountId) || {}).currency) || 1;
+    state.transactions.push({
+      id: uid(),
+      refund: true,
+      refundOf: t.id,
+      cancelOf: p.id,
+      type: 'in',
+      cat: null,
+      amount: Math.round(((share * tRate) / accRate) * 100) / 100,
+      accountId: accId,
+      dateISO,
+      time: nowHM(),
+      month: monthOfISO(dateISO),
+      note: note || tr('انصراف از خریدِ قسطی'),
+      updatedAt: Date.now(),
+    });
+    made++;
+  });
+  p.cancelled = { at: Date.now(), dateISO, reason: note };
+  p.updatedAt = Date.now();
+  save();
+  render();
+  closeModal();
+  haptic(10);
+  toast(tr('انصراف ثبت شد') + (made ? (' · ' + tr('{n} سندِ برگشت', { n: toFa(made) })) : '') + ' ✓');
+  openPlanDetail(p.id);
+}
+
+// برگشت از انصراف: سندِ برگشت‌های همان انصراف پاک می‌شوند و اقساط برمی‌گردند
+export function uncancelPlan(id) {
+  const p = findPlan(id);
+  if (!p || !p.cancelled) return;
+  askConfirm(tr('انصراف لغو شود؟ اقساطِ باقی‌مانده برمی‌گردند و سندِ برگشتِ پولِ این انصراف پاک می‌شود.'), () => {
+    state.transactions = state.transactions.filter((x) => !(x.refund && x.cancelOf === p.id));
+    delete p.cancelled;
+    p.updatedAt = Date.now();
+    save();
+    render();
+    toast(tr('طرح دوباره فعال شد'));
+    openPlanDetail(p.id);
+  });
+}
+
+// «برگشتِ پول» برای یک قسطِ پرداخت‌شده: همان شیتِ برگشتِ تراکنش‌ها
+export function rowRefund(planId, rowId) {
+  const p = findPlan(planId);
+  const r = p && (p.rows || []).find((x) => x.id === rowId);
+  if (!r || !r.txId) { toast(tr('این ردیف تراکنش ندارد')); return; }
+  import('./forms.js').then((m) => m.openRefundForm(r.txId));
 }
 
 // ── جزئیات یک طرح ──
@@ -701,6 +904,13 @@ export function openPlanDetail(id) {
       const parts = [];
       if (r.interest) parts.push((tr('سود') + ' ') + fmtShort(r.interest));
       if (r.penalty) parts.push((tr('جریمه') + ' ') + fmtShort(r.penalty));
+      const rt = state.transactions.find((x) => x.id === r.txId);
+      const rBack = rt ? refundedInTxUnit(rt) : 0;
+      const rFull = rt && isReversed(rt);
+      // پاکتِ قرض/امانت خرج نیست، پس برگشتِ پول هم معنا ندارد
+      const canBack = !!rt && rt.cat !== LOAN_CAT && !rFull;
+      if (rBack > 0) parts.push((tr('برگشت') + ' ') + fmtShort(rBack));
+      if (rFull) parts.push(tr('خرج حساب نمی‌شود'));
       return `<div class="item" style="min-height:56px;${r.paidISO ? 'opacity:.7' : ''}">
         <div class="ic" style="background:${r.paidISO ? 'var(--green-soft)' : late ? 'var(--red-soft)' : 'var(--card2)'};color:${r.paidISO ? 'var(--green)' : late ? 'var(--red)' : 'var(--muted)'}">${icon(r.paidISO ? 'check' : r.kind === 'interest' ? 'coin' : 'calendar')}</div>
         <div class="mid" onclick="openRowEdit('${p.id}','${r.id}')">
@@ -708,9 +918,12 @@ export function openPlanDetail(id) {
           <div class="t2">${sub}</div>
         </div>
         <div class="amt-col">
-          <div class="amt ${r.paidISO ? '' : 'out'}">${fmt(rowTotal(r))}</div>
+          <div class="amt ${r.paidISO ? '' : 'out'}"${rFull ? ' style="text-decoration:line-through;opacity:.65"' : ''}>${fmt(rowTotal(r))}</div>
           ${r.paidISO
-            ? `<button class="btn sm" style="margin-top:4px" onclick="unpayRow('${p.id}','${r.id}')">${tr('لغو')}</button>`
+            ? (canBack
+              ? `<button class="btn sm" style="margin-top:4px;color:var(--green)" onclick="rowRefund('${p.id}','${r.id}')">${icon('refund')} ${tr('برگشت')}</button>
+                 <button class="btn sm" style="margin-top:4px" onclick="unpayRow('${p.id}','${r.id}')">${tr('لغو پرداخت')}</button>`
+              : `<button class="btn sm" style="margin-top:4px" onclick="unpayRow('${p.id}','${r.id}')">${tr('لغو')}</button>`)
             : `<button class="btn sm primary" style="margin-top:4px" onclick="openPayRow('${p.id}','${r.id}')">${tr('پرداخت')}</button>`}
         </div>
       </div>`;
@@ -719,16 +932,18 @@ export function openPlanDetail(id) {
   openModal(`
     <button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
     <div id="plDetail">
-    <h2>${esc(p.title)} <span class="badge">${p.kind === 'loan' ? tr('وام') : tr('خرید قسطی')}</span></h2>
+    <h2>${esc(p.title)} <span class="badge">${p.kind === 'loan' ? tr('وام') : tr('خرید قسطی')}</span>${st.cancelled ? ` <span class="badge" style="color:var(--red)">${tr('انصراف داده شد')}</span>` : ''}</h2>
+    ${st.cancelled ? `<div class="small" style="color:var(--red);margin-bottom:8px">${tr('از این خرید منصرف شده‌ای؛ اقساطِ باقی‌مانده لغو شدند')}${st.refunded ? (' · ' + tr('{v} برگشت داده شد', { v: fmtShort(st.refunded) })) : ''}</div>` : ''}
     <div class="grid2" style="margin-bottom:10px">
-      <div class="stat"><div class="lbl">${tr('مانده')}</div><div class="val red">${fmtShort(st.remain)}</div></div>
-      <div class="stat"><div class="lbl">${tr('پرداختی')}</div><div class="val green">${fmtShort(st.paidSum)}</div></div>
+      <div class="stat"><div class="lbl">${st.cancelled ? tr('لغوشده') : tr('مانده')}</div><div class="val ${st.cancelled ? 'muted' : 'red'}">${fmtShort(st.cancelled ? st.remainAll : st.remain)}</div></div>
+      <div class="stat"><div class="lbl">${tr('پرداختی')}</div><div class="val green">${fmtShort(st.paidSum)}${st.refunded ? ` <span class="small" style="color:var(--green)">(−${fmtShort(st.refunded)})</span>` : ''}</div></div>
     </div>
     <div class="pbar" style="margin:4px 0 6px"><div style="width:${pct}%"></div></div>
     <div class="small muted" style="display:flex;justify-content:space-between;margin-bottom:12px"><span>${tr('{a} از {b} قسط', { a: toFa(st.paid.length), b: toFa(st.rows.length) })}</span>${st.interestAll ? `<span>${tr('سود')} ${fmtShort(st.interestPaid)} ${tr('از')} ${fmtShort(st.interestAll)}</span>` : ''}<span>${toFa(pct)}${'٪'}</span></div>
     <div class="row" style="margin-bottom:12px">
       <button class="btn sm" style="flex:1" onclick="openRowEdit('${p.id}','')">${icon('plus')} ${tr('ردیف')}</button>
       <button class="btn sm" style="flex:1" onclick="openPlanForm(findPlan('${p.id}'))">${icon('edit')} ${tr('مشخصات')}</button>
+      <button class="btn sm" style="flex:1;color:${st.cancelled ? 'var(--muted)' : 'var(--red)'}" onclick="${st.cancelled ? `uncancelPlan('${p.id}')` : `openPlanCancel('${p.id}')`}">${icon(st.cancelled ? 'refresh' : 'refund')} ${st.cancelled ? tr('بازگرداندن طرح') : (p.kind === 'loan' ? tr('تسویه/انصراف') : tr('انصراف'))}</button>
     </div>
     <div style="max-height:52vh;overflow:auto">${rows || ('<div class="empty">' + tr('ردیفی نیست.') + '</div>')}</div>
     </div>
@@ -743,17 +958,20 @@ function planCard(p) {
   const n = nxt ? daysUntil(nxt.dueISO) : null;
   const late = !st.done && n !== null && n < 0;
   const soon = !st.done && n !== null && n >= 0 && n <= 7;
-  const when = st.done
+  const when = st.cancelled
+    ? (st.refunded ? tr('انصراف داده شد') + ' · ' + tr('{v} برگشت', { v: fmtShort(st.refunded) }) : tr('انصراف داده شد'))
+    : st.done
     ? tr('تسویه شد')
     : nxt
       ? n < 0 ? toFa(-n) + (' ' + tr('روز عقب‌افتاده')) : n === 0 ? tr('امروز') : n <= 7 ? toFa(n) + (' ' + tr('روز دیگر')) : fmtDate(nxt.dueISO)
       : '';
   const t2 = [p.kind === 'loan' ? tr('وام') : tr('خرید قسطی'), tr('{a} از {b}', { a: toFa(st.paid.length), b: toFa(st.rows.length) })]
+    .concat(st.cancelled ? [tr('انصراف داده شد')] : [])
     .concat(nxt && !st.done ? [(tr('قسط بعدی') + ' ') + fmtShort(rowTotal(nxt))] : [])
     .join(' · ');
   return `
     <div class="item" style="${st.done ? 'opacity:.62' : ''}">
-      <div class="ic" style="background:${late ? 'var(--red-soft)' : st.done ? 'var(--green-soft)' : 'var(--orange-soft)'};color:${late ? 'var(--red)' : st.done ? 'var(--green)' : 'var(--orange)'}">${icon(p.kind === 'loan' ? 'bank' : 'gift')}</div>
+      <div class="ic" style="background:${st.cancelled ? 'var(--red-soft)' : late ? 'var(--red-soft)' : st.done ? 'var(--green-soft)' : 'var(--orange-soft)'};color:${st.cancelled ? 'var(--red)' : late ? 'var(--red)' : st.done ? 'var(--green)' : 'var(--orange)'}">${icon(st.cancelled ? 'refund' : p.kind === 'loan' ? 'bank' : 'gift')}</div>
       <div class="mid" onclick="openPlanDetail('${p.id}')">
         <div class="t1">${esc(p.title)}</div>
         <div class="t2">${t2}</div>
@@ -761,7 +979,7 @@ function planCard(p) {
       </div>
       <div class="amt-col">
         <div class="amt ${st.done ? '' : 'out'}">${st.done ? fmtShort(st.total) : fmtShort(st.remain)}</div>
-        <div class="bal">${st.done ? tr('پرداخت‌شده') : tr('مانده')}</div>
+        <div class="bal">${st.cancelled ? tr('انصراف') : st.done ? tr('پرداخت‌شده') : tr('مانده')}</div>
         ${nxt && !st.done && n <= 7 ? `<button class="btn sm ${late ? 'primary' : ''}" style="margin-top:6px" onclick="openPayRow('${p.id}','${nxt.id}')">${tr('پرداخت')}</button>` : `<button class="btn sm" style="margin-top:6px" onclick="openPlanDetail('${p.id}')">${tr('جزئیات')}</button>`}
       </div>
     </div>
@@ -774,6 +992,7 @@ export function upcomingByMonth() {
   const cur = curMonthKey();
   const map = new Map();
   for (const p of allPlans()) {
+    if (p.cancelled) continue;
     for (const r of p.rows || []) {
       if (r.paidISO) continue;
       let mk = monthOfISO(r.dueISO);

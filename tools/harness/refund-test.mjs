@@ -77,7 +77,8 @@ check('فاکتور هم برگشت می‌پذیرد', forms.canRefund(addTx({ 
 check('درآمد: برگشت ندارد', forms.canRefund(income) === false);
 check('انتقال: برگشت ندارد', forms.canRefund(xferOut) === false);
 check('پاکتِ قرض: برگشت ندارد', forms.canRefund(loanTx) === false);
-check('قسط: از بخشِ اقساط مدیریت می‌شود، نه برگشت', forms.canRefund(planTx) === false);
+check('قسطِ خریدِ قسطی هم برگشت می‌پذیرد (از بخشِ اقساط)', forms.canRefund(planTx) === true);
+check('قسطِ پاکتِ قرض/امانت برگشت ندارد', forms.canRefund({ type: 'out', cat: 'loan', accountId: 'a1', amount: 250000, planId: 'p1', planRowId: 'r2' }) === false);
 
 // ── ۲. برگشتِ کامل از راهِ رابطِ کاربری ───────────────────────────────────
 forms.openTxForm(buy);
