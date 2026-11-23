@@ -1,4 +1,8 @@
-// انتخابگر حساب — چیپسِ سریع (لوگوی بانک + موجودی) + شیت کامل با گروه‌بندی و جست‌وجو.
+// انتخابگر حساب — موزاییکِ همهٔ حساب‌ها (لوگوی بانک + موجودی) در یک نوارِ کشیدنی به
+// چپ و راست، به‌همراه شیت کامل با گروه‌بندی و جست‌وجو. اندازهٔ هر کاشی همان چیپِ قبلی است؛
+// فقط به‌جایِ «چند تا پرکاربرد + دکمهٔ همه»، همه‌شان در همان نوار می‌آیند و با کشیدن
+// انگشت پیدا می‌شوند. با exclude می‌شود حساب‌هایی را از فهرست بیرون گذاشت (مثلاً در
+// انتقال، حسابِ مبدأ در فهرستِ مقصد نمی‌آید).
 //
 // چرا select پنهان؟ همهٔ فرم‌های برنامه (تراکنش، انتقال، طلب/بدهی، اقساط) مقدار حساب را
 // با document.getElementById(id).value می‌خوانند و بعضی‌ها onchange روی همان select دارند.
@@ -60,25 +64,28 @@ function usageScore(a) {
   return s;
 }
 
-export function favoriteAccounts(selectedId, n = 4) {
-  const list = activeAccounts();
-  const last = store.get(LAST_ACCT_KEY);
+// همهٔ حساب‌ها به ترتیبِ کاربرد: حسابِ انتخاب‌شده اول (حتی اگر بایگانی باشد)، بعد
+// پرکاربردها، بعد بقیه — تا اولین کاشیِ نوار همان باشد که احتمالاً می‌خواهی.
+export function rankedAccounts(selectedId, excludeIds) {
+  const ex = new Set((excludeIds || []).filter(Boolean));
   const out = [];
-  const sel = selectedId ? accountById(selectedId) : null;
-  if (sel) out.push(sel); // حسابِ انتخاب‌شده همیشه دیده می‌شود (حتی اگر بایگانی باشد)
-  const ranked = list
-    .slice()
+  const sel = selectedId && !ex.has(selectedId) ? accountById(selectedId) : null;
+  if (sel) out.push(sel);
+  const last = store.get(LAST_ACCT_KEY);
+  const ranked = activeAccounts()
+    .filter((a) => !ex.has(a.id))
     .sort(
       (x, y) =>
         usageScore(y) - usageScore(x) ||
         (y.id === last ? 1 : 0) - (x.id === last ? 1 : 0) ||
         (y.updatedAt || 0) - (x.updatedAt || 0)
     );
-  for (const a of ranked) {
-    if (out.length >= n) break;
-    if (!out.some((z) => z.id === a.id)) out.push(a);
-  }
+  for (const a of ranked) if (!out.some((z) => z.id === a.id)) out.push(a);
   return out;
+}
+
+export function favoriteAccounts(selectedId, n = 4) {
+  return rankedAccounts(selectedId).slice(0, n);
 }
 
 // ── ویجت ──
@@ -113,17 +120,16 @@ function btnInner(id, selected) {
 
 function widgetHtml(id, selected) {
   const cfg = REG.get(id) || {};
-  // با یک حساب، ردیفِ چیپس فقط جا می‌گیرد؛ همان دکمهٔ فشرده کافی است
-  if (cfg.compact || activeAccounts().length <= 1) return `<button type="button" class="apbtn" id="${id}_btn" onclick="openAcctSheet('${id}')">${btnInner(id, selected)}</button>`;
-  const favs = favoriteAccounts(selected, cfg.max || 3);
+  const list = rankedAccounts(selected, cfg.exclude);
+  // حسابی نمانده (یا هنوز حسابی نساخته‌ای): همان دکمهٔ فشرده که شیت را باز می‌کند
+  if (!list.length) return `<button type="button" class="apbtn" id="${id}_btn" onclick="openAcctSheet('${id}')">${btnInner(id, selected)}</button>`;
   const parts = [];
   if (cfg.allowNone) parts.push(noneChipHtml(id, cfg, !selected));
-  for (const a of favs) parts.push(chipHtml(id, a, a.id === selected));
-  const total = activeAccounts().length;
+  for (const a of list) parts.push(chipHtml(id, a, a.id === selected));
   parts.push(
     `<button type="button" class="achip more" onclick="openAcctSheet('${id}')">
-      <span class="achip-ic" style="--br:var(--accent)">${icon('list')}</span>
-      <span class="achip-tx"><b>${tr('همهٔ حساب‌ها')}</b><small>${toFa(total)}</small></span>
+      <span class="achip-ic" style="--br:var(--accent)">${icon('search')}</span>
+      <span class="achip-tx"><b>${tr('همهٔ حساب‌ها')}</b><small>${toFa(activeAccounts().length)}</small></span>
     </button>`
   );
   return parts.join('');
@@ -138,13 +144,64 @@ export function apickHtml(o) {
     compact: !!o.compact,
     title: o.title || '',
     max: o.max || 3,
+    exclude: normExclude(o.exclude),
   });
   const selected = o.selected == null ? '' : String(o.selected);
-  const opts = o.allowNone
-    ? `<option value="" ${!selected ? 'selected' : ''}>${esc(o.noneLabel || tr('بدون حساب'))}</option>${accountOptGroups(selected)}`
-    : accountOptGroups(selected);
+  const opts = optionsHtml(id, selected);
   return `<select class="input apick-sel" id="${esc(id)}" style="display:none"${o.onchange ? ` onchange="${o.onchange}"` : ''}>${opts}</select>
     <div class="apick ${o.wrapClass || ''}" id="${esc(id)}_ap">${widgetHtml(id, selected)}</div>`;
+}
+
+function normExclude(x) {
+  return (Array.isArray(x) ? x : x ? [x] : []).map(String).filter(Boolean);
+}
+
+// گزینه‌های همان <select> پنهان: بدونِ حساب‌های بیرون‌گذاشته‌شده
+function optionsHtml(id, selected) {
+  const cfg = REG.get(id) || {};
+  const list = rankedAccounts(selected, cfg.exclude);
+  const none = cfg.allowNone ? `<option value="" ${!selected ? 'selected' : ''}>${esc(cfg.noneLabel || tr('بدون حساب'))}</option>` : '';
+  return none + accountOptGroups(selected, list);
+}
+
+function rebuildOptions(id) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const cur = sel.value || '';
+  sel.innerHTML = optionsHtml(id, cur);
+  sel.value = cur;
+  if (sel.value !== cur && cur) {
+    // حسابِ بایگانی/بیرون‌گذاشته‌شده‌ای که گزینه نداشت: اضافه شود تا انتخاب گم نشود
+    const a = accountById(cur);
+    if (a) {
+      sel.insertAdjacentHTML('beforeend', `<option value="${esc(cur)}">${esc(a.name)}</option>`);
+      sel.value = cur;
+    }
+  }
+}
+
+// بیرون گذاشتنِ حساب‌ها از یک ویجتِ ساخته‌شده (مثلاً حسابِ مبدأ از فهرستِ مقصدِ انتقال)
+export function apickSetExclude(id, ids) {
+  const cfg = REG.get(id);
+  const sel = document.getElementById(id);
+  if (!cfg || !sel) return;
+  cfg.exclude = normExclude(ids);
+  const cur = sel.value || '';
+  if (cfg.exclude.includes(cur)) {
+    // مقدارِ فعلی دیگر در فهرست نیست: اولین حسابِ ممکن جایش می‌نشیند
+    const alt = rankedAccounts('', cfg.exclude)[0];
+    const next = alt ? alt.id : (cfg.allowNone ? '' : '');
+    if (next && next !== cur) {
+      rebuildOptions(id);
+      sel.value = next;
+      haptic(4);
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      apickPaint(id);
+      return;
+    }
+  }
+  rebuildOptions(id);
+  apickPaint(id);
 }
 
 // بازسازی ویجت بعد از هر تغییری که بیرون از ویجت انجام شده (مثلاً ست‌شدن value در کد)
@@ -158,6 +215,8 @@ export function apickPaint(id) {
 export function apickChoose(id, acctId) {
   const sel = document.getElementById(id);
   if (!sel) return;
+  const cfg = REG.get(id) || {};
+  if (acctId && (cfg.exclude || []).includes(String(acctId))) return; // مثلاً حسابِ مبدأ در مقصد
   const want = acctId || '';
   if (sel.value !== want) {
     sel.value = want;
@@ -192,8 +251,9 @@ export function sheetListHtml(id, q) {
   const cur = sel ? sel.value || '' : '';
   const cfg = REG.get(id) || {};
   const needle = String(q || '').trim().toLowerCase();
-  let list = activeAccounts();
-  const selA = cur ? accountById(cur) : null;
+  const ex = new Set(cfg.exclude || []);
+  let list = activeAccounts().filter((a) => !ex.has(a.id));
+  const selA = cur && !ex.has(cur) ? accountById(cur) : null;
   if (selA && !list.some((a) => a.id === selA.id)) list = [...list, selA];
   if (needle) {
     list = list.filter((a) =>

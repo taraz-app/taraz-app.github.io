@@ -38,6 +38,7 @@ It is designed around the **envelope (“pocket”) method** — every month’s
 
 ### Assets
 - **Accounts**: bank cards, cash, crypto, online wallets, grouped by institution; multi‑currency with per‑currency rates; opening balance; last‑4 digits.
+- **Picking an account in every form**: a mosaic of all accounts at the same tile size as before (bank logo + name + balance) that you swipe left and right to browse and tap to choose; the selected account sits first and the rest follow by how often you use them. The “All accounts” tile opens the full sheet with search (name/bank/last‑4) and grouping by institution. In an account‑to‑account transfer the source account does not appear in the destination list (and vice versa), and if a change would make the two sides the same, the other side moves to a different account automatically.
 - **Investments**: gold, property, car, crypto or anything with a quantity, buy price and current price; profit/loss overall and per asset.
 - **Debts & loans**: money you lent or borrowed, with due dates, partial payments (each payment is its own transaction), settlement to any account, reminders for upcoming/overdue items.
 - **Installment plans**: bank loans (equal installments or monthly principal + periodic interest) and installment purchases (down payment + n × instalment vs. cash price). Editable schedule per row (amount, date, interest, penalty), one‑tap “paid” that creates the real transaction, overdue tracking, interest reporting, optional disbursement of the loan principal into an account.
@@ -114,7 +115,7 @@ All amounts are stored in the account’s own currency; the base currency is use
 
 ## Version
 
-Current: `2.41.0` (root) / `2.41.0-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+Current: `2.42.0` (root) / `2.42.0-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
 
 ## License
 

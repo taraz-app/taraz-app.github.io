@@ -4,7 +4,7 @@ import { hasGeminiKey, readInvoiceImage, readPaperTxImage, readAnyImage, readSms
 import { parseBankSms, countTxBlocks } from './sms.js';
 import { rememberScan, listScans, loadScan, deleteScan } from './scanhist.js';
 import { cardHtml, cardDigits, luhnOk, bankByBin, bankByName, fmtCardNo, allBanks, allExchanges } from './cards.js';
-import { apickHtml, acctVisual, acctBalText } from './acctpick.js';
+import { apickHtml, apickSetExclude, acctVisual, acctBalText } from './acctpick.js';
 import { jalaliNow, monthOfISO, fmtDate, monthLabel, curMonthKey, shiftMonth, bookNow, bookCalendar } from './jalali.js';
 import { jalaliMonths, gregMonths } from './i18n.js';
 import { closeModal, openModal, askConfirm } from './modal.js';
@@ -2814,8 +2814,8 @@ export function openTransferForm(tx) {
   const feePocketInit = (feeOld && feeOld.cat) || 'waste';
   openModal(`<button class="x" onclick="closeModal()" aria-label="${tr('بستن')}">${icon('x')}</button>
     <h2 style="display:flex;align-items:center">${pair ? tr('ویرایش انتقال') : tr('انتقال بین حساب‌ها')}${infoTip(tr('انتقال هزینه یا درآمد نیست و در گزارش‌ها حساب نمی‌شود.'), 'lg')}</h2>
-    <div class="field"><label>${tr('از حساب')}</label>${apickHtml({ id: 'trFrom', selected: fromId, onchange: 'transferAccountsChanged()', title: tr('انتقال از کدام حساب؟') })}</div>
-    <div class="field"><label>${tr('به حساب')}</label>${apickHtml({ id: 'trTo', selected: toId, onchange: 'transferAccountsChanged()', title: tr('انتقال به کدام حساب؟') })}</div>
+    <div class="field"><label>${tr('از حساب')}</label>${apickHtml({ id: 'trFrom', selected: fromId, exclude: toId ? [toId] : [], onchange: "transferAccountsChanged('trFrom')", title: tr('انتقال از کدام حساب؟') })}</div>
+    <div class="field"><label>${tr('به حساب')}</label>${apickHtml({ id: 'trTo', selected: toId, exclude: fromId ? [fromId] : [], onchange: "transferAccountsChanged('trTo')", title: tr('انتقال به کدام حساب؟') })}</div>
     <div class="field"><label>${tr('مبلغ از حساب مبدأ')}</label><input class="input" id="trAmount" type="number" step="any" inputmode="decimal" min="0" placeholder="${tr('مبلغ به واحد حساب مبدأ')}" value="${out ? out.amount : ''}" oninput="updateTransferPreview()"></div>
     <div class="field" id="trAmountToWrap" style="display:${sameCurInit ? '' : 'none'}"><label>${tr('مبلغ واریز به مقصد (اختیاری)')}</label><input class="input" id="trAmountTo" type="number" step="any" inputmode="decimal" min="0" placeholder="${tr('خالی = برابر با مبلغ برداشت')}" value="${inn && sameCurInit ? inn.amount : ''}" oninput="updateTransferPreview()"></div>
     <div class="field" id="trFeePocketWrap" style="display:${sameCurInit ? '' : 'none'}"><label>${tr('کیف کارمزد (اگر واریز کمتر از برداشت باشد)')}</label><select class="input" id="trFeePocket" onchange="updateTransferPreview()">${CATS.filter((c) => !c.loan).map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select></div>
@@ -2909,7 +2909,22 @@ function renderTransferRates() {
   wrap.innerHTML = html;
 }
 
-export function transferAccountsChanged() {
+// حسابِ مبدأ در فهرستِ مقصد نمی‌آید و برعکس. طرفی که کاربر همین الان عوض کرده
+// دست‌نخورده می‌ماند؛ اگر طرفِ دیگر یکی شده باشد، همان جابه‌جا می‌شود (انگار جایشان عوض شده).
+export function syncTransferExcludes(changedId) {
+  const fromEl = document.getElementById('trFrom');
+  const toEl = document.getElementById('trTo');
+  if (!fromEl || !toEl) return;
+  const cut = (id) => {
+    const other = id === 'trTo' ? fromEl.value : toEl.value;
+    apickSetExclude(id, other ? [other] : []);
+  };
+  if (changedId === 'trTo') { cut('trFrom'); cut('trTo'); }
+  else { cut('trTo'); cut('trFrom'); }
+}
+
+export function transferAccountsChanged(changedId) {
+  syncTransferExcludes(changedId);
   renderTransferRates();
   renderTransferBalance();
   updateTransferPreview();

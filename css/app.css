@@ -485,7 +485,12 @@ body.locked{overflow:hidden}
 .sgroup .hint:last-child{border-bottom:0}
 /* ── انتخابگر حساب: چیپسِ سریع + شیت کامل (js/acctpick.js) ── */
 .apick-sel{display:none}
-.apick{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-2);min-width:0}
+/* موزاییکِ حساب‌ها: همهٔ حساب‌ها با همان اندازهٔ چیپ، در یک نوارِ کشیدنی به چپ/راست */
+.apick{display:flex;flex-wrap:nowrap;gap:var(--sp-2);margin-top:var(--sp-2);min-width:0;
+  overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scrollbar-width:none;
+  -webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;padding-block:1px 4px}
+.apick::-webkit-scrollbar{display:none;width:0;height:0}
+.apick>.achip{flex:0 0 auto;scroll-snap-align:start}
 .achip{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding-block:5px;padding-inline:6px 12px;border-radius:var(--r-md);
   background:var(--card2);border:1px solid var(--border);color:var(--text);font:inherit;text-align:start;cursor:pointer;transition:.15s var(--ease)}
 .achip.on{border-color:var(--accent);background:var(--accent-soft)}
@@ -501,7 +506,7 @@ body.locked{overflow:hidden}
 .achip-tx small{font-size:var(--fs-xs);color:var(--muted);white-space:nowrap}
 .achip.more{border-style:dashed;background:transparent}
 .achip.more b,.achip.more small{color:var(--muted)}
-/* حالت فشرده: یک دکمه به‌جای ردیفِ چیپس‌ها (جایی که جا تنگ است) */
+/* وقتی حسابی نیست: یک دکمه به‌جای نوارِ موزاییک */
 .apbtn{display:flex;align-items:center;gap:8px;width:100%;min-height:var(--tap);padding:6px 12px;border-radius:var(--r-md);
   background:var(--card2);border:1px solid var(--border);color:var(--text);font:inherit;text-align:start;cursor:pointer}
 .apbtn:active{background:var(--press)}
