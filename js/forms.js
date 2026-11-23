@@ -1204,8 +1204,13 @@ export function openPaperReview(altKind) {
         <div class="field"><label>${tr('توضیح')}</label>
           <input class="input" id="pNote_${r.id}" value="${esc(r.note || '')}" placeholder="${tr('مثلاً نان')}">
         </div>
-        <div class="field"><label>${tr('تاریخ')}</label>
-          <input class="input" id="pDate_${r.id}" type="date" value="${r.dateISO || todayISO()}">
+        <div class="row" style="flex-wrap:nowrap">
+          <div class="field col" style="min-width:0"><label>${tr('تاریخ')}</label>
+            <input class="input" id="pDate_${r.id}" type="date" value="${r.dateISO || todayISO()}">
+          </div>
+          <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label>
+            <input class="input" id="pTime_${r.id}" type="time" dir="ltr" value="${r.time || ''}" placeholder="${tr('الان')}">
+          </div>
         </div>
         <button type="button" class="btn sm danger block" onclick="removePaperRow('${r.id}')">${tr('حذف این مورد')}</button>
       </div>`;
@@ -1227,10 +1232,12 @@ function readPaperDraftFromDom() {
     const acct = document.getElementById('pAcct_' + r.id);
     const note = document.getElementById('pNote_' + r.id);
     const date = document.getElementById('pDate_' + r.id);
+    const time = document.getElementById('pTime_' + r.id);
     if (amt) r.amount = parseFloat(amt.value) || 0;
     if (acct) r.accountId = acct.value;
     if (note) r.note = note.value.trim();
     if (date) r.dateISO = date.value || todayISO();
+    if (time) r.time = String(time.value || '').slice(0, 5);
   });
 }
 
@@ -1813,6 +1820,7 @@ export function qaSave() {
     accountId: qa.accountId,
     note: qa.note || '',
     dateISO,
+    time: qa.time || nowHM(),
     type: qa.type,
     cat: qa.type === 'out' ? qa.cat : null,
     sub: qa.type === 'out' ? qa.sub || '' : '',
@@ -1893,7 +1901,10 @@ export function openRefundForm(txId, refundId) {
     </div>
     <div class="field"><label>${tr('به کدام حساب برگشت؟')} ${infoTip(tr('می‌تواند با حسابِ خرید فرق کند؛ پول هر جا نشسته همان‌جا ثبت می‌شود.'))}</label>
       ${apickHtml({ id: 'rfAcc', selected: prev ? prev.accountId : t.accountId, title: tr('به کدام حساب برگشت؟') })}</div>
-    <div class="field"><label>${tr('تاریخِ برگشت')}</label><input class="input" id="rfDate" type="date" value="${prev ? prev.dateISO : todayISO()}"></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخِ برگشت')}</label><input class="input" id="rfDate" type="date" value="${prev ? prev.dateISO : todayISO()}"></div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label><input class="input" id="rfTime" type="time" dir="ltr" value="${prev ? prev.time || '' : ''}" placeholder="${tr('الان')}"></div>
+    </div>
     <div class="field"><label>${tr('دلیل (اختیاری)')}</label>
       <div class="chips" style="margin-bottom:8px">${REFUND_REASONS.map((r) => `<button type="button" class="chip" onclick="setRfReason('${r}')">${tr(r)}</button>`).join('')}</div>
       <input class="input" id="rfNote" value="${prev ? esc(prev.note || '') : ''}" placeholder="${tr('مثلاً: کالا نرسید')}">
@@ -1956,10 +1967,11 @@ export function saveRefund() {
   if (v > remain + 1e-6) { toast(tr('مبلغِ برگشت از خودِ خرید بیشتر است')); return; }
   const accId = (document.getElementById('rfAcc') || {}).value || t.accountId;
   const dateISO = (document.getElementById('rfDate') || {}).value || todayISO();
+  const time = String(((document.getElementById('rfTime') || {}).value || '')).slice(0, 5) || (prev && prev.time) || nowHM();
   const note = String(((document.getElementById('rfNote') || {}).value || '')).trim();
   const amount = Math.round(((v * pRate) / acctRate(accId)) * 100) / 100; // به پولِ حسابی که پول در آن نشسته
   if (prev) {
-    Object.assign(prev, { amount, accountId: accId, dateISO, month: monthOfISO(dateISO), note, updatedAt: Date.now() });
+    Object.assign(prev, { amount, accountId: accId, dateISO, time, month: monthOfISO(dateISO), note, updatedAt: Date.now() });
   } else {
     state.transactions.push({
       id: uid(),
@@ -1970,7 +1982,7 @@ export function saveRefund() {
       amount,
       accountId: accId,
       dateISO,
-      time: nowHM(),
+      time,
       month: monthOfISO(dateISO),
       note,
       updatedAt: Date.now(),
@@ -1996,7 +2008,7 @@ export function openRefundDetail(tx) {
       <div class="ic" style="background:var(--green-soft);color:var(--green)">${icon('refund')}</div>
       <div class="mid">
         <div class="t1">${fmt(tx.amount || 0)} ${esc(curName(a ? a.currency : baseCur()))}</div>
-        <div class="t2">${fmtDate(tx.dateISO)}${a ? ' · ' + esc(a.name) : ''}${tx.note ? ' · ' + esc(tx.note) : ''}</div>
+        <div class="t2">${fmtDate(tx.dateISO)}${tx.time ? ' · ' + toFa(tx.time) : ''}${a ? ' · ' + esc(a.name) : ''}${tx.note ? ' · ' + esc(tx.note) : ''}</div>
       </div>
     </div>
     ${orig ? `<div class="hint" style="margin-bottom:12px">${tr('به خریدِ «{n}» در {d} وصل است؛ به همان اندازه از خرج و پاکتش کم شده.', { n: esc(orig.note || tr('tx.expense')), d: esc(fmtDate(orig.dateISO)) })}</div>` : ''}
@@ -2419,7 +2431,7 @@ export function openAccountLedger(id) {
             return `<div class="item" onclick="openTxForm(findTx('${t.id}'))">
               <div class="mid">
                 <div class="t1">${title}${inv ? (' <span class="badge">' + tr('فاکتور') + '</span>') : ''}</div>
-                <div class="t2">${fmtDate(t.dateISO)}${transfer ? (' · ' + tr('انتقال')) : inv ? ' · ' + (t.lines || []).length + (' ' + tr('قلم')) : cat ? ' · ' + cat.label : ''}</div>
+                <div class="t2">${fmtDate(t.dateISO)}${t.time ? ' · ' + toFa(t.time) : ''}${transfer ? (' · ' + tr('انتقال')) : inv ? ' · ' + (t.lines || []).length + (' ' + tr('قلم')) : cat ? ' · ' + cat.label : ''}</div>
               </div>
               <div class="amt-col">
                 <div class="amt ${amtClass}">${sign}${fmt(t.amount)}</div>
@@ -2468,7 +2480,7 @@ export function openPocketLedger(catId, mk) {
             return `<div class="item" onclick="openTxForm(findTx('${it.txId}'),{back:&quot;openPocketLedger('${catId}','${mk}')&quot;})">
               <div class="mid">
                 <div class="t1">${esc(it.title)}${it.invoice ? (' <span class="badge">' + tr('فاکتور') + '</span>') : ''}${backBadge}</div>
-                <div class="t2">${fmtDate(it.dateISO)} · ${a ? esc(a.name) : '—'}${it.reversed ? ' · ' + tr('خرج حساب نمی‌شود') : ''}</div>
+                <div class="t2">${fmtDate(it.dateISO)}${it.time ? ' · ' + toFa(it.time) : ''} · ${a ? esc(a.name) : '—'}${it.reversed ? ' · ' + tr('خرج حساب نمی‌شود') : ''}</div>
               </div>
               <div class="amt ${it.inflow ? 'in' : 'out'}"${it.reversed ? ' style="opacity:.5;text-decoration:line-through"' : ''}>${it.inflow ? '+' : '−'}${fmt(it.reversed ? (it.gross || 0) : it.amount)}${a && a.currency !== baseCur() ? ` <small class="muted">${esc(curName(a.currency))}</small><div class="small muted" style="font-weight:400">≈ ${fmtShort(it.amount * rateOf(a.currency))}</div>` : ''}</div>
             </div>`;
@@ -2811,7 +2823,10 @@ export function openTransferForm(tx) {
     <div id="trRates"></div>
     <div id="trPreview" class="hint" style="margin-bottom:12px;display:none"></div>
     <div class="field"><label>${tr('توضیح (اختیاری)')}</label><input class="input" id="trNote" placeholder="${tr('مثلاً انتقال به کارت خرید')}" value="${esc((out && out.note) || (inn && inn.note) || '')}"></div>
-    <div class="field"><label>${tr('تاریخ')}</label><input class="input" id="trDate" type="date" value="${(out && out.dateISO) || (inn && inn.dateISO) || todayISO()}"></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخ')}</label><input class="input" id="trDate" type="date" value="${(out && out.dateISO) || (inn && inn.dateISO) || todayISO()}"></div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label><input class="input" id="trTime" type="time" dir="ltr" value="${(out && out.time) || (inn && inn.time) || ''}" placeholder="${tr('الان')}"></div>
+    </div>
     <button class="btn primary block" onclick="saveTransfer()">${pair ? tr('ذخیره انتقال') : tr('ثبت انتقال')}</button>
     ${pair ? '<button class="btn danger block" style="margin-top:8px" onclick="delTx(\'' + (out || inn).id + ('\')">' + tr('حذف این انتقال') + '</button>') : ''}
   `);
@@ -2972,6 +2987,7 @@ function syncTransferFee(pair, ctx) {
       nobal: true,
       note: tr('کارمزد انتقال'),
       dateISO: ctx.dateISO,
+      time: ctx.time || '',
       month: ctx.month,
       updatedAt: ctx.stamp,
     });
@@ -3033,6 +3049,10 @@ export function saveTransfer() {
   const feePocket = feePocketEl ? feePocketEl.value : 'waste';
   const dateISO = document.getElementById('trDate').value || todayISO();
   const month = monthOfISO(dateISO);
+  // ساعتِ انتقال: خالی بماند، ساعتِ قبلیِ همان انتقال یا همین لحظه
+  const timeIn = String(((document.getElementById('trTime') || {}).value || '')).slice(0, 5);
+  const prevPairTx = editingTransferPair ? state.transactions.find((t) => t.pair === editingTransferPair && t.time) : null;
+  const time = timeIn || (prevPairTx && prevPairTx.time) || nowHM();
   const note = document.getElementById('trNote').value.trim();
   const stamp = Date.now();
 
@@ -3047,12 +3067,13 @@ export function saveTransfer() {
       inn = { id: uid(), pair: editingTransferPair, type: 'transferIn', cat: null };
       state.transactions.push(inn);
     }
-    Object.assign(out, { amount, accountId: from, note, dateISO, month, updatedAt: stamp, type: 'transferOut', cat: null, fromRate, toRate });
+    Object.assign(out, { amount, accountId: from, note, dateISO, time, month, updatedAt: stamp, type: 'transferOut', cat: null, fromRate, toRate });
     Object.assign(inn, {
       amount: destinationAmount,
       accountId: to,
       note: note || tr('انتقال بین حساب‌ها'),
       dateISO,
+      time,
       month,
       updatedAt: stamp,
       type: 'transferIn',
@@ -3060,7 +3081,7 @@ export function saveTransfer() {
       fromRate,
       toRate,
     });
-    syncTransferFee(editingTransferPair, { fee, pocket: feePocket, from, dateISO, month, stamp });
+    syncTransferFee(editingTransferPair, { fee, pocket: feePocket, from, dateISO, time, month, stamp });
     toast((tr('انتقال ویرایش شد') + ' ✓'));
   } else {
     const pair = uid();
@@ -3071,6 +3092,7 @@ export function saveTransfer() {
       accountId: from,
       note,
       dateISO,
+      time,
       month,
       type: 'transferOut',
       cat: null,
@@ -3085,6 +3107,7 @@ export function saveTransfer() {
       accountId: to,
       note: note || tr('انتقال بین حساب‌ها'),
       dateISO,
+      time,
       month,
       type: 'transferIn',
       cat: null,
@@ -3092,7 +3115,7 @@ export function saveTransfer() {
       fromRate,
       toRate,
     });
-    syncTransferFee(pair, { fee, pocket: feePocket, from, dateISO, month, stamp });
+    syncTransferFee(pair, { fee, pocket: feePocket, from, dateISO, time, month, stamp });
     toast((tr('انتقال با موفقیت ثبت شد') + ' ✓'));
   }
   rememberTransfer(from, to);

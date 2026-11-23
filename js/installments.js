@@ -176,6 +176,7 @@ function syncRowTx(p, r) {
     accountId: acc.id,
     note,
     dateISO: r.paidISO,
+    time: r.paidTime || '',
     month: monthOfISO(r.paidISO),
     type: 'out',
     cat: p.cat || 'need',
@@ -196,11 +197,13 @@ function syncDisburseTx(p) {
     p.disburseTxId = null;
     return;
   }
+  if (!p.disburseTime) p.disburseTime = nowHM(); // ساعتِ واریزِ اصلِ وام
   p.disburseTxId = upsertTx(p.disburseTxId, {
     amount: p.principal,
     accountId: acc.id,
     note: (tr('دریافت وام') + ' ') + p.title,
     dateISO: p.startISO || todayISO(),
+    time: p.disburseTime || '',
     month: monthOfISO(p.startISO || todayISO()),
     type: 'in',
     cat: LOAN_CAT,
@@ -286,6 +289,8 @@ export function openPlanForm(p) {
           <input class="input" id="plPrincipal" type="number" inputmode="numeric" placeholder="${tr('مثلاً 100000000')}" value="${p && p.principal ? p.principal : ''}"></div>
         <div class="col field"><label>${tr('تاریخ دریافت')}</label>
           <input class="input" id="plStart" type="date" value="${p ? p.startISO : todayISO()}" onchange="plStartChanged(this.value)"></div>
+        <div class="col field" style="flex:0 0 30%"><label>${tr('ساعت (اختیاری)')}</label>
+          <input class="input" id="plStartTime" type="time" dir="ltr" value="${p && p.disburseTime ? p.disburseTime : ''}" placeholder="${tr('الان')}"></div>
       </div>
       <div class="field"><label>${tr('واریز اصل وام به حساب')} ${infoTip(tr('فقط اگر همین الان وام گرفته‌ای و هنوز موجودی‌اش را در حساب وارد نکرده‌ای، حساب را انتخاب کن. برای وام‌های قدیمی که پولش الان در حساب‌هایت هست «ثبت نشود» بماند وگرنه دوبار حساب می‌شود.'))}</label>
         ${apickHtml({ id: 'plDisburseAcc', selected: (p && p.disburseAccountId) || '', allowNone: true, noneLabel: tr('ثبت نشود — پول قبلاً در حسابم هست'), onchange: 'plRecalc()', title: tr('واریز اصل وام به کدام حساب؟') })}
@@ -489,6 +494,7 @@ export function savePlan() {
     if (p.kind === 'loan') {
       p.principal = v('plPrincipal');
       p.startISO = document.getElementById('plStart').value || p.startISO;
+      p.disburseTime = String((document.getElementById('plStartTime') || {}).value || '').slice(0, 5) || p.disburseTime || '';
       p.disburseAccountId = document.getElementById('plDisburseAcc').value || '';
     }
     syncAllTx(p);
@@ -510,6 +516,7 @@ export function savePlan() {
   if (kind === 'loan') {
     p.principal = v('plPrincipal');
     p.startISO = document.getElementById('plStart').value || todayISO();
+    p.disburseTime = String((document.getElementById('plStartTime') || {}).value || '').slice(0, 5) || nowHM();
     p.disburseAccountId = document.getElementById('plDisburseAcc').value || '';
     const perInt = F.mode === 'equal' ? v('plPerInt') : 0;
     p.rows = buildRows({
@@ -576,6 +583,7 @@ export function payRow(planId, rowId, opts) {
   if (!r) return;
   r.paidISO = (opts && opts.dateISO) || todayISO();
   if (opts && opts.accountId) r.accountId = opts.accountId;
+  r.paidTime = (opts && opts.time) || r.paidTime || nowHM();
   r.noTx = false;
   syncRowTx(p, r);
   p.updatedAt = Date.now();
@@ -597,6 +605,7 @@ export function unpayRow(planId, rowId) {
     return;
   }
   r.paidISO = null;
+  r.paidTime = '';
   r.noTx = false;
   syncRowTx(p, r);
   p.updatedAt = Date.now();
@@ -618,7 +627,10 @@ export function openPayRow(planId, rowId) {
     <div class="stat" style="margin-bottom:12px"><div class="lbl">${tr('مبلغ پرداخت')}</div><div class="val">${fmt(rowTotal(r))} <span class="small muted">${curName(baseCur())}</span></div>
       ${r.interest || r.penalty ? `<div class="sub">${tr('اصل')} ${fmt(r.amount)}${r.interest ? (' + ' + tr('سود') + ' ') + fmt(r.interest) : ''}${r.penalty ? (' + ' + tr('جریمه') + ' ') + fmt(r.penalty) : ''}</div>` : ''}</div>
     <div class="field"><label>${tr('از کدام حساب؟')}</label>${apickHtml({ id: 'prAcc', selected: acc, compact: true })}</div>
-    <div class="field"><label>${tr('تاریخ پرداخت')}</label><input class="input" id="prDate" type="date" value="${todayISO()}"></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخ پرداخت')}</label><input class="input" id="prDate" type="date" value="${r.paidISO || todayISO()}"></div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label><input class="input" id="prTime" type="time" dir="ltr" value="${r.paidTime || ''}" placeholder="${tr('الان')}"></div>
+    </div>
     <div class="field"><label>${tr('جریمهٔ دیرکرد (اختیاری)')}</label><input class="input" id="prPenalty" type="number" inputmode="numeric" value="${r.penalty || ''}" placeholder="0"></div>
     <div class="field"><label>${tr('مبلغ پرداختی')} ${infoTip(tr('اگر کمتر از کل قسط بنویسی، همین مقدار پرداخت‌شده ثبت می‌شود و باقی‌مانده به‌عنوان ردیفی جدا با همان سررسید می‌ماند تا بعداً بپردازی.'))}</label><input class="input" id="prAmount" type="number" inputmode="numeric" value="${rowTotal(r)}"></div>
     <button class="btn primary block" onclick="confirmPayRow('${p.id}','${r.id}')">${icon('check')} ${tr('ثبت پرداخت')}</button>
@@ -635,7 +647,7 @@ export function confirmPayRow(planId, rowId) {
   if (paid > total + 0.5) return toast(tr('بیشتر از مبلغ قسط است؛ اگر لازم است اول ردیف را ویرایش کن'));
   if (paid < total - 0.5) splitRow(p, r, paid);
   closeModal();
-  payRow(planId, rowId, { accountId: document.getElementById('prAcc').value, dateISO: document.getElementById('prDate').value });
+  payRow(planId, rowId, { accountId: document.getElementById('prAcc').value, dateISO: document.getElementById('prDate').value, time: String((document.getElementById('prTime') || {}).value || '').slice(0, 5) });
 }
 
 // پرداخت جزئی: ردیف فعلی به اندازهٔ مبلغ پرداختی کوچک می‌شود (اول اصل، بعد سود، بعد جریمه)
@@ -669,7 +681,10 @@ export function openRowEdit(planId, rowId) {
       <div class="col field"><label>${tr('جریمه')}</label><input class="input" id="rwPenalty" type="number" inputmode="numeric" value="${r ? r.penalty || '' : ''}"></div>
     </div>
     <div class="field"><label>${tr('سررسید')}</label><input class="input" id="rwDue" type="date" value="${r ? r.dueISO : todayISO()}"></div>
-    <div class="field"><label>${tr('تاریخ پرداخت (خالی = پرداخت نشده)')}</label><input class="input" id="rwPaid" type="date" value="${r && r.paidISO ? r.paidISO : ''}"></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخ پرداخت (خالی = پرداخت نشده)')}</label><input class="input" id="rwPaid" type="date" value="${r && r.paidISO ? r.paidISO : ''}"></div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label><input class="input" id="rwPaidTime" type="time" dir="ltr" value="${r && r.paidTime ? r.paidTime : ''}" placeholder="${tr('الان')}"></div>
+    </div>
     <div class="field"><label>${tr('حساب پرداخت')}</label>${apickHtml({ id: 'rwAcc', selected: (r ? r.accountId || p.accountId : p.accountId) || '', compact: true })}</div>
     <button class="btn primary block" onclick="saveRow('${planId}','${r ? r.id : ''}')">${tr('ذخیره')}</button>
     ${r ? `<button class="btn danger block" style="margin-top:8px" onclick="delRow('${planId}','${r.id}')">${tr('حذف این ردیف')}</button>` : ''}
@@ -689,6 +704,8 @@ export function saveRow(planId, rowId) {
   r.penalty = v('rwPenalty');
   r.dueISO = document.getElementById('rwDue').value || r.dueISO || todayISO();
   r.paidISO = document.getElementById('rwPaid').value || null;
+  const rwTime = String((document.getElementById('rwPaidTime') || {}).value || '').slice(0, 5);
+  r.paidTime = r.paidISO ? (rwTime || r.paidTime || nowHM()) : '';
   r.accountId = document.getElementById('rwAcc').value;
   if (r.paidISO) r.noTx = false;
   p.rows.sort((a, b) => a.dueISO.localeCompare(b.dueISO));
@@ -755,7 +772,10 @@ export function openPlanCancel(id) {
       <div class="hint" id="pcHint" style="margin-top:8px"></div>
     </div>
     <div class="field"><label>${tr('به کدام حساب برگشت؟')}</label>${apickHtml({ id: 'pcAcc', selected: p.accountId, compact: true, title: tr('به کدام حساب برگشت؟') })}</div>
-    <div class="field"><label>${tr('تاریخِ برگشت')}</label><input class="input" id="pcDate" type="date" value="${todayISO()}"></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخِ برگشت')}</label><input class="input" id="pcDate" type="date" value="${todayISO()}"></div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label><input class="input" id="pcTime" type="time" dir="ltr" value="" placeholder="${tr('الان')}"></div>
+    </div>
     <div class="field"><label>${tr('دلیل (اختیاری)')}</label>
       <div class="chips" style="margin-bottom:8px">${CANCEL_REASONS.map((r) => `<button type="button" class="chip" onclick="setPcReason('${r}')">${tr(r)}</button>`).join('')}</div>
       <input class="input" id="pcNote" placeholder="${tr('مثلاً: انصراف از خرید')}">
@@ -804,6 +824,7 @@ export function savePlanCancel() {
   if (v > total + 0.5) { toast(tr('مبلغِ برگشت از پرداختی‌ها بیشتر است')); return; }
   const accId = (document.getElementById('pcAcc') || {}).value || p.accountId;
   const dateISO = (document.getElementById('pcDate') || {}).value || todayISO();
+  const time = String(((document.getElementById('pcTime') || {}).value || '')).slice(0, 5) || nowHM();
   const note = String(((document.getElementById('pcNote') || {}).value || '')).trim();
   // پخشِ مبلغ بین قسط‌ها به نسبتِ جایِ باقی‌ماندهٔ هر قسط (سقف: خودِ آن قسط)
   const shares = new Array(rows.length).fill(0);
@@ -840,7 +861,7 @@ export function savePlanCancel() {
       amount: Math.round(((share * tRate) / accRate) * 100) / 100,
       accountId: accId,
       dateISO,
-      time: nowHM(),
+      time,
       month: monthOfISO(dateISO),
       note: note || tr('انصراف از خریدِ قسطی'),
       updatedAt: Date.now(),
@@ -897,7 +918,7 @@ export function openPlanDetail(id) {
       const soon = !r.paidISO && n >= 0 && n <= 3;
       const lbl = r.kind === 'down' ? tr('پیش‌پرداخت') : r.kind === 'interest' ? tr('سود دوره') : (tr('قسط') + ' ') + toFa(payN);
       const sub = r.paidISO
-        ? (tr('پرداخت شد') + ' ') + fmtDate(r.paidISO) + (r.noTx ? (' · ' + tr('بدون تراکنش')) : '')
+        ? (tr('پرداخت شد') + ' ') + fmtDate(r.paidISO) + (r.paidTime ? ' · ' + toFa(r.paidTime) : '') + (r.noTx ? (' · ' + tr('بدون تراکنش')) : '')
         : late
           ? ('<span style="color:var(--red)">' + tr('عقب‌افتاده') + ' · ') + fmtDate(r.dueISO) + '</span>'
           : (soon ? '<span style="color:var(--orange)">' : '') + (tr('سررسید') + ' ') + fmtDate(r.dueISO) + (soon ? '</span>' : '');

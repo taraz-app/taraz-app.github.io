@@ -556,6 +556,7 @@ export function pocketItems(mk, catId) {
           amount: (t.amount || 0) - Math.min(t.interest > 0 ? t.interest : 0, t.amount || 0),
           title: t.note || 'قرض گرفته/برگشت طلب',
           dateISO: t.dateISO,
+          time: t.time || '',
           accountId: t.accountId,
           invoice: false,
           inflow: true,
@@ -572,6 +573,7 @@ export function pocketItems(mk, catId) {
           amount: (line.amount || 0) * keep,
           title: line.name || 'قلم فاکتور',
           dateISO: t.dateISO,
+          time: t.time || '',
           accountId: t.accountId,
           invoice: true,
           gross: line.amount || 0,
@@ -585,6 +587,7 @@ export function pocketItems(mk, catId) {
         amount: (t.amount || 0) * keep,
         title: t.note || (catById(catId) ? catById(catId).label : 'خرج'),
         dateISO: t.dateISO,
+        time: t.time || '',
         accountId: t.accountId,
         invoice: false,
         gross: t.amount || 0,
@@ -593,7 +596,8 @@ export function pocketItems(mk, catId) {
       });
     }
   }
-  return items.sort((a, b) => String(b.dateISO || '').localeCompare(String(a.dateISO || '')));
+  const key = (x) => String(x.dateISO || '') + ' ' + String(x.time || '');
+  return items.sort((a, b) => key(b).localeCompare(key(a)));
 }
 
 // سهم پایهٔ پاکت از بودجهٔ همین ماه (بدون ماندهٔ قبلی)

@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { esc, fmt, fmtShort, store, toast, uid, todayISO, infoTip } from './utils.js';
+import { esc, fmt, fmtShort, store, toast, uid, todayISO, nowHM, toFa, infoTip } from './utils.js';
 import { fmtDate, monthOfISO } from './jalali.js';
 import { closeModal, openModal, askConfirm } from './modal.js';
 import { render } from './view.js';
@@ -150,8 +150,13 @@ export function openDebtForm(d) {
       <select class="input" id="dInterestCat" onchange="debtInterestCatChanged()">${CATS.filter((c) => !c.loan).map((c) => `<option value="${c.id}" ${c.id === ((d && d.interestCat) || lastInterestCat()) ? 'selected' : ''}>${c.label}</option>`).join('')}</select>
       <div id="dInterestSubWrap" style="margin-top:8px">${subChipsHtml((d && d.interestCat) || lastInterestCat(), (d && d.interestSub) || '', 'debtPickInterestSub')}</div>
     </div>
-    <div class="field"><label>${tr('تاریخ ثبت')}</label>
-      <input class="input" id="dDate" type="date" value="${d && d.createdISO ? d.createdISO : todayISO()}">
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخ ثبت')}</label>
+        <input class="input" id="dDate" type="date" value="${d && d.createdISO ? d.createdISO : todayISO()}">
+      </div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label>
+        <input class="input" id="dTime" type="time" dir="ltr" value="${d && d.time ? d.time : ''}" placeholder="${tr('الان')}">
+      </div>
     </div>
     <div class="field"><label>${tr('تاریخ سررسید')}</label>
       <input class="input" id="dDue" type="date" value="${d && d.dueISO ? d.dueISO : todayISO()}">
@@ -225,6 +230,7 @@ export function saveDebt() {
   const phone = normPhone((document.getElementById('dPhone') || {}).value || '');
   const dueISO = document.getElementById('dDue').value || '';
   const createdISO = (document.getElementById('dDate') || {}).value || todayISO();
+  const timeIn = String(((document.getElementById('dTime') || {}).value || '')).slice(0, 5);
   const note = (document.getElementById('dNote').value || '').trim();
   const accSel = document.getElementById('dAccount');
   const accountId = accSel && accSel.value && accountById(accSel.value) ? accSel.value : '';
@@ -232,7 +238,7 @@ export function saveDebt() {
   if (editingDebtId) {
     const d = allDebts().find((x) => x.id === editingDebtId);
     if (!d) return;
-    Object.assign(d, { person, amount, kind, dueISO, note, accountId, createdISO, payback, interestCat, interestSub, phone, updatedAt: stamp });
+    Object.assign(d, { person, amount, kind, dueISO, note, accountId, createdISO, time: timeIn || d.time || nowHM(), payback, interestCat, interestSub, phone, updatedAt: stamp });
     syncDebtTxs(d);
     toast(tr('ویرایش شد'));
   } else {
@@ -246,6 +252,7 @@ export function saveDebt() {
       note,
       accountId,
       createdISO,
+      time: timeIn || nowHM(),
       payback,
       interestCat,
       interestSub,
@@ -299,6 +306,7 @@ function upsertLinkedTx(existingId, d, phase) {
     accountId: d.accountId,
     note: note + (d.note ? ' — ' + d.note : ''),
     dateISO,
+    time: d.time || '',
     month: monthOfISO(dateISO),
     type,
     cat: LOAN_CAT,
@@ -338,6 +346,7 @@ function paymentTx(d, pay) {
     accountId: acc.id,
     note,
     dateISO: pay.dateISO,
+    time: pay.time || '',
     month: monthOfISO(pay.dateISO),
     type: lent ? 'in' : 'out',
     cat: LOAN_CAT,
@@ -423,7 +432,7 @@ export function settleDebt(id) {
       const splitTxt = sp.interest > 0 ? ' · ' + tr('اصل {p} · سود {i}', { p: fmtShort(sp.principal), i: fmtShort(sp.interest) }) : '';
       return `<div class="item" style="min-height:48px">
         <div class="ic" style="background:var(--green-soft);color:var(--green)">${icon('check')}</div>
-        <div class="mid"><div class="t1">${fmt(pay.amount)} ${esc(curName(cur))}</div><div class="t2">${fmtDate(pay.dateISO)}${a ? ' · ' + esc(a.name) : (' · ' + tr('بدون حساب'))}${splitTxt}</div></div>
+        <div class="mid"><div class="t1">${fmt(pay.amount)} ${esc(curName(cur))}</div><div class="t2">${fmtDate(pay.dateISO)}${pay.time ? ' · ' + toFa(pay.time) : ''}${a ? ' · ' + esc(a.name) : (' · ' + tr('بدون حساب'))}${splitTxt}</div></div>
         <button class="btn sm icon danger" onclick="delDebtPayment('${d.id}','${pay.id}')" aria-label="${tr('حذف')}">${icon('trash')}</button>
       </div>`;
     })
@@ -446,7 +455,10 @@ export function settleDebt(id) {
       <div class="hint" id="spHint" style="margin-top:8px">${tr('ماندهٔ فعلی: {r} — کمتر از این هم می‌شود داد.', { r: esc(fmt(remain)) })}</div></div>
     <div class="field"><label>${lent ? tr('به کدام حساب برگشت؟') : tr('از کدام حساب پرداخت شد؟')} ${infoTip(tr('می‌تواند با حساب اولیه فرق کند؛ مثلاً از ملت قرض داده‌ای و به ملی برگشته.'))}</label>
       ${apickHtml({ id: 'spAcc', selected: settlePreselect(d), allowNone: true, noneLabel: tr('بدون اتصال به حساب'), title: lent ? tr('به کدام حساب برگشت؟') : tr('از کدام حساب پرداخت شد؟') })}</div>
-    <div class="field"><label>${tr('تاریخ')}</label><input class="input" id="spDate" type="date" value="${todayISO()}"></div>
+    <div class="row" style="flex-wrap:nowrap">
+      <div class="field col" style="min-width:0"><label>${tr('تاریخ')}</label><input class="input" id="spDate" type="date" value="${todayISO()}"></div>
+      <div class="field" style="flex:0 0 34%"><label>${tr('ساعت (اختیاری)')}</label><input class="input" id="spTime" type="time" dir="ltr" value="" placeholder="${tr('الان')}"></div>
+    </div>
     <button class="btn primary block" onclick="addDebtPayment('${d.id}')">${icon('check')} ${tr('ثبت')} ${lent ? tr('دریافت') : tr('پرداخت')}</button>` : ('<div class="hint" style="margin-bottom:12px;color:var(--green)">' + tr('کامل تسویه شده.') + '</div>')}
     ${hist ? `<div class="divider"></div><h3 class="muted" style="margin-bottom:8px">${tr('پرداخت‌ها')}</h3>${hist}` : ''}
   `);
@@ -498,6 +510,7 @@ export function addDebtPayment(id) {
     id: uid(),
     amount,
     dateISO: document.getElementById('spDate').value || todayISO(),
+    time: String(((document.getElementById('spTime') || {}).value || '')).slice(0, 5) || nowHM(),
     accountId: document.getElementById('spAcc').value || '',
     txId: null,
   });

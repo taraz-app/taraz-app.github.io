@@ -19,7 +19,8 @@ It is designed around the **envelope (“pocket”) method** — every month’s
 
 ### Transactions
 - Quick numeric keypad for entering an expense in two taps; amount is grouped with commas and read back in words (“1.5 million toman”).
-- Full form: expense / income, pocket, account, date, note.
+- Full form: expense / income, pocket, account, date, **time**, note.
+- **A time on every transaction**: transfers between accounts (withdrawal, deposit and fee together), installment and down‑payment payments, the loan disbursement, refunds, cancelling an installment purchase, debt payments and receipts, quick keypad entry, and the rows of the photo/SMS review screen. Leaving the time empty stamps the moment of saving; a time read from a bank SMS can be corrected in the review screen. Rows within a day are ordered by time, and the time (in Persian digits) shows in the list, the account ledger, the pocket ledger, the plan details and the payment history.
 - **Invoices**: one transaction with many line items (name, quantity, unit, unit price), each item assignable to its own pocket; the app checks that lines add up to the total.
 - **Transfers** between accounts, including cross‑currency transfers with a per‑transfer rate.
 - **Purchase refunds**: item never arrived, or the order was cancelled? Tap “Money came back” on that transaction and enter the amount, the account and the date. The purchase stays where it is (badged “Refunded”) and a refund row appears on the day the money landed; spending and the pocket drop by **exactly the refunded amount**, a refund never counts as income, and “Cancel this refund” puts everything back. Partial refunds work too (e.g. half the amount), and on an invoice the amount is spread across the line items proportionally.
@@ -113,7 +114,7 @@ All amounts are stored in the account’s own currency; the base currency is use
 
 ## Version
 
-Current: `2.40.0` (root) / `2.40.0-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
+Current: `2.41.0` (root) / `2.41.0-test` (test build). The version string is in `js/utils.js` (`APP_VERSION`) and shown in Settings → About.
 
 ## License
 

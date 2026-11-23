@@ -250,7 +250,7 @@ function txRow(t, opts = {}) {
       <div class="ic" style="background:${color.startsWith('var') ? color.replace(')', '-soft)') : color + '22'};color:${color}">${icon(icName)}</div>
       <div class="mid">
         <div class="t1">${title}</div>
-        <div class="t2">${fmtDate(t.dateISO)} · ${a ? esc(a.name) : '—'}${transferTail}${unitHint ? ' · ' + unitHint : ''} ${badges}</div>
+        <div class="t2">${fmtDate(t.dateISO)}${t.time ? ' · ' + toFa(t.time) : ''} · ${a ? esc(a.name) : '—'}${transferTail}${unitHint ? ' · ' + unitHint : ''} ${badges}</div>
       </div>
       <div class="amt-col"><div class="amt ${amtClass}">${sign}${fmt(t.amount)}</div>${balTxt}</div>
     </div>`;
